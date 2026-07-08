@@ -60,11 +60,13 @@
   - [ムーアの法則が分かる!半導体微細化のメリットも解説 — 半導体Jobエージェント](https://semiconductor-job.com/moores-law/)
   - [【歴史】トランジスタ微細化の限界と2000年代における技術的課題(note)](https://note.com/yaandyu0423/n/n2f829463096b)
 
-### (3) プランク定数の値が2倍の世界
-- ド・ブロイ波長 $\lambda=h/p$ が2倍になり、量子効果がより大きなスケールで顕在化する。不確定性 $\hbar/2$ も2倍。
-- ボーア半径 $a_B = 4\pi\epsilon_0\hbar^2/(m_e e^2)$ は $\hbar^2$ に比例するので**4倍**、水素原子のエネルギー準位 $\propto 1/\hbar^2$ は $1/4$ になるなど、原子のサイズ・束縛エネルギーが劇的に変わる。
+### (3) プランク定数の値が2倍の世界 【本レポートで採用】
+- **素朴なスケーリング**($e,m_e,c,\varepsilon_0$ 固定で $\hbar\to2\hbar$):微細構造定数 $\alpha=e^2/(4\pi\varepsilon_0\hbar c)\propto\hbar^{-1}$ が半分に。ボーア半径 $a_0\propto\hbar^2$ は4倍、Rydbergエネルギー $\propto\hbar^{-2}$ は1/4、熱的ド・ブロイ波長 $\propto\hbar$ と縮退温度 $\propto\hbar^2$ が増大し量子効果が巨視化、Chandrasekhar質量 $\propto\hbar^{3/2}$ は約2.83倍。
+- **本質的論点**:$\hbar$ は次元付き量なので「2倍」は単位依存。物理的に意味を持つのは無次元量($\alpha$ 等)の変化のみで、無次元定数を固定したままの $\hbar$ 変更は観測不能な単位変更にすぎない(Duff–Okun–Veneziano)。基礎定数の変動可能性と観測制約は Uzan のレビューを参照。$\alpha$ の変動は $|\Delta\alpha/\alpha|\lesssim10^{-6}$ に制約。
 - 出典:
-  - [井戸型ポテンシャル — Wikipedia](https://ja.wikipedia.org/wiki/%E4%BA%95%E6%88%B8%E5%9E%8B%E3%83%9D%E3%83%86%E3%83%B3%E3%82%B7%E3%83%A3%E3%83%AB)($\hbar$ に対するエネルギー準位のスケーリング)
+  - [M. J. Duff, L. B. Okun, G. Veneziano, "Trialogue on the number of fundamental constants," JHEP 03 (2002) 023 (arXiv:physics/0110060)](https://arxiv.org/abs/physics/0110060)
+  - [J.-P. Uzan, "The fundamental constants and their variation," Rev. Mod. Phys. 75 (2003) 403 (arXiv:hep-ph/0205340)](https://arxiv.org/abs/hep-ph/0205340)
+  - [Fine-structure constant — Wikipedia](https://en.wikipedia.org/wiki/Fine-structure_constant)
 
 ---
 
