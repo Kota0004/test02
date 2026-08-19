@@ -42,6 +42,23 @@
 | 05 | [システム設計](docs/05_システム設計.md) | アーキテクチャ図、技術選定、データモデル、取込パイプライン、**ジオフェンスのOS制約対策** |
 | 06 | [開発ロードマップ](docs/06_開発ロードマップ.md) | フェーズ0〜3、工数目安、**今週やること** |
 | 07 | [法務・運用・リスク](docs/07_法務_運用_リスク.md) | 誤報・見逃しの扱い、免責、位置情報プライバシー、ながら運転、**出典表示義務** |
+| 08 | [自治体連携・打診文案](docs/08_自治体連携_打診文案.md) | 千葉市・千葉国道事務所・千葉県・気象庁への確認事項と問い合わせ文案 |
+
+## ツール（データ整備・取込）
+
+[`tools/`](tools/) に、企画を実データで動かすためのスクリプト一式があります。
+すべてネットワーク不要の検証つきです（`./tools/run_tests.sh`）。
+
+| ツール | 役割 |
+|-------|------|
+| `build_spots.py` | 道路冠水注意箇所の**一覧PDF → 座標つきJSON**＋人手レビュー用CSV |
+| `enrich_dem.py` | **標高タイルから相対標高 dz** を求めて冠水閾値を補正 |
+| `fetch_amedas.py` | **アメダス10分値 → 各地点の雨量と危険度**（`risk/latest.json` 相当） |
+| `probe_endpoints.py` | 自治体の公開ページの**データ取得口を調査** |
+| `risk.py` | 危険度エンジン（サーバ側）。`prototype/risk.js` と**全2,700ケースで一致を検証済** |
+| `verify_prototype.js` | プロトタイプの**ブラウザ自動検証13項目** |
+
+→ 使い方と実行順は [`tools/README.md`](tools/README.md)
 
 ## プロトタイプ
 
@@ -78,14 +95,33 @@ cd 災害アプリ/prototype && python3 -m http.server 8000
 
 ---
 
-## 次にやること
+## 進捗と次の一手
 
-1. `prototype/` を動かして、体験として成立しているか確かめる
-2. 国交省 千葉国道事務所の[道路冠水箇所マップ](https://www.ktr.mlit.go.jp/chiba/chiba_index030.html)（千葉県内95箇所）を入手し、座標付きデータ化する
-3. 気象庁アメダスJSON（`https://www.jma.go.jp/bosai/amedas/data/latest_time.txt`）を叩いて雨量が取れることを確認する
-4. [千葉市 地下道冠水情報システム](https://pub.os-alert.info/chiba/devmap)のデータ形式を確認し、連携可否を調べる
+| # | やること | 状態 |
+|---|---------|------|
+| ① | プロトタイプを動かして体験を確認 | ✅ 実装・自動検証済み（13項目すべて成功） |
+| ② | 千葉県内95箇所を座標付きデータ化 | 🔧 **ツール完成・PDF待ち**（`build_spots.py` + `enrich_dem.py`） |
+| ③ | アメダスのリアルタイム雨量を取り込む | 🔧 **ツール完成・実データでの疎通待ち**（`fetch_amedas.py`） |
+| ④ | 千葉市 地下道システムのデータ形式確認と連携打診 | 🔧 **調査ツール＋打診文案あり**（`probe_endpoints.py` / [docs/08](docs/08_自治体連携_打診文案.md)） |
 
-→ 詳細は [06_開発ロードマップ](docs/06_開発ロードマップ.md)
+②〜④は、ツールと検証は完成していますが、**外部サイトへの実アクセスがまだ**です。
+手元で次の3つを実行すれば、そのまま実データに進めます。
+
+```bash
+pip install -r tools/requirements.txt
+
+# ② PDFを入手して座標化 → 人手レビュー
+python3 tools/build_spots.py --pdf 一覧表.pdf --area chiba --out data/spots_chiba.json
+python3 tools/enrich_dem.py --in data/spots_chiba.json --out data/spots_chiba.json
+
+# ③ アメダスから雨量を取って危険度を出す
+python3 tools/fetch_amedas.py --spots data/spots_chiba.json --out data/risk_latest.json
+
+# ④ 千葉市システムのデータ取得口を調べる
+python3 tools/probe_endpoints.py --url https://pub.os-alert.info/chiba/devmap --browser
+```
+
+→ 詳細は [`tools/README.md`](tools/README.md) と [06_開発ロードマップ](docs/06_開発ロードマップ.md)
 
 ---
 

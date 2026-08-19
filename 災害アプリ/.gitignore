@@ -1,0 +1,8 @@
+# 取込ツールの出力（実データ）。人手レビュー前のものをうっかり共有しないため。
+data/*.json
+data/*.csv
+!data/.gitkeep
+
+# 依存
+node_modules/
+__pycache__/
