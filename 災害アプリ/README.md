@@ -8,6 +8,9 @@
 
 作成: 二川 航大（4143） / 2026-08-19
 
+> 🚀 **これから始める方へ: [はじめかた.md](はじめかた.md) を順に進めてください。**
+> 迷ったら `python3 tools/doctor.py` を打てば、いまの状態と次にやることが出ます。
+
 ---
 
 ## 中心となるアイデア
@@ -54,7 +57,9 @@
 | `build_spots.py` | 道路冠水注意箇所の**一覧PDF → 座標つきJSON**＋人手レビュー用CSV |
 | `enrich_dem.py` | **標高タイルから相対標高 dz** を求めて冠水閾値を補正 |
 | `fetch_amedas.py` | **アメダス10分値 → 各地点の雨量と危険度**（`risk/latest.json` 相当） |
+| `review_spots.py` | 座標を**地図上で確認・修正**するレビュー画面（一番手間のかかる作業を短縮） |
 | `probe_endpoints.py` | 自治体の公開ページの**データ取得口を調査** |
+| `doctor.py` | 環境診断と「**次にやること**」の提示 |
 | `risk.py` | 危険度エンジン（サーバ側）。`prototype/risk.js` と**全2,700ケースで一致を検証済** |
 | `verify_prototype.js` | プロトタイプの**ブラウザ自動検証13項目** |
 
@@ -100,7 +105,7 @@ cd 災害アプリ/prototype && python3 -m http.server 8000
 | # | やること | 状態 |
 |---|---------|------|
 | ① | プロトタイプを動かして体験を確認 | ✅ 実装・自動検証済み（13項目すべて成功） |
-| ② | 千葉県内95箇所を座標付きデータ化 | 🔧 **ツール完成・PDF待ち**（`build_spots.py` + `enrich_dem.py`） |
+| ② | 千葉県内95箇所を座標付きデータ化 | 🔧 **ツール完成・PDF待ち**（`build_spots.py` + `enrich_dem.py` + `review_spots.py`） |
 | ③ | アメダスのリアルタイム雨量を取り込む | 🔧 **ツール完成・実データでの疎通待ち**（`fetch_amedas.py`） |
 | ④ | 千葉市 地下道システムのデータ形式確認と連携打診 | 🔧 **調査ツール＋打診文案あり**（`probe_endpoints.py` / [docs/08](docs/08_自治体連携_打診文案.md)） |
 
@@ -109,10 +114,12 @@ cd 災害アプリ/prototype && python3 -m http.server 8000
 
 ```bash
 pip install -r tools/requirements.txt
+python3 tools/doctor.py                 # いまの状態と次にやることを確認
 
-# ② PDFを入手して座標化 → 人手レビュー
+# ② PDFを入手して座標化 → 地図上で人手レビュー
 python3 tools/build_spots.py --pdf 一覧表.pdf --area chiba --out data/spots_chiba.json
 python3 tools/enrich_dem.py --in data/spots_chiba.json --out data/spots_chiba.json
+python3 tools/review_spots.py --spots data/spots_chiba.json
 
 # ③ アメダスから雨量を取って危険度を出す
 python3 tools/fetch_amedas.py --spots data/spots_chiba.json --out data/risk_latest.json
