@@ -10,6 +10,7 @@
 
 > 🚀 **これから始める方へ: [はじめかた.md](はじめかた.md) を順に進めてください。**
 > 迷ったら `python3 tools/doctor.py` を打てば、いまの状態と次にやることが出ます。
+> **iPad・スマホの場合は [iPadでの進めかた.md](iPadでの進めかた.md) から。**
 
 ---
 
@@ -62,6 +63,7 @@
 | `doctor.py` | 環境診断と「**次にやること**」の提示 |
 | `risk.py` | 危険度エンジン（サーバ側）。`prototype/risk.js` と**全2,700ケースで一致を検証済** |
 | `verify_prototype.js` | プロトタイプの**ブラウザ自動検証13項目** |
+| `verify_ipad.js` | iPadの画面サイズ・タッチ操作での検証14項目 |
 
 → 使い方と実行順は [`tools/README.md`](tools/README.md)
 

@@ -130,8 +130,15 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--spots", required=True, help="レビューする spots JSON")
     ap.add_argument("--port", type=int, default=8765)
+    ap.add_argument("--host", default="127.0.0.1",
+                    help="待ち受けるアドレス。Codespaces等で転送されない場合は 0.0.0.0")
     ap.add_argument("--no-open", action="store_true", help="ブラウザを自動で開かない")
+    ap.add_argument("--ipad", action="store_true",
+                    help="iPad/Codespaces 向け（0.0.0.0 で待ち受け、ブラウザは開かない）")
     args = ap.parse_args()
+
+    if args.ipad:
+        args.host, args.no_open = "0.0.0.0", True
 
     path = Path(args.spots)
     if not path.exists():
@@ -145,14 +152,17 @@ def main() -> int:
     state["data"] = load(path)
     done, excluded, total = progress()
 
-    url = f"http://127.0.0.1:{args.port}/"
+    shown_host = "127.0.0.1" if args.host in ("0.0.0.0", "") else args.host
+    url = f"http://{shown_host}:{args.port}/"
     print("危険箇所レビュー")
     print(f"  対象: {path}  （{total} 件 / レビュー済み {done} 件）")
     print(f"  URL : {url}")
     print("  操作: → 次へ / ← 前へ / Enter この位置でOK")
     print("  終了: Ctrl+C（変更は操作のたびに保存されています）")
+    if args.host == "0.0.0.0":
+        print("  ※ Codespaces では［ポート］タブの 8765 を開いてください")
 
-    srv = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+    srv = ThreadingHTTPServer((args.host, args.port), Handler)
     if not args.no_open:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     try:

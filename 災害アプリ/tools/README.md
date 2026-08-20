@@ -21,6 +21,7 @@ npm i playwright && npx playwright install chromium
 cd 災害アプリ/prototype && python3 -m http.server 8000 &
 open http://localhost:8000/          # 手で触る
 node ../tools/verify_prototype.js    # 自動検証（13項目）
+node ../tools/verify_ipad.js         # iPadの画面・タッチでの検証（14項目）
 ```
 
 ### ①' いまの状態を診断する
@@ -54,6 +55,9 @@ python3 tools/enrich_dem.py --in data/spots_chiba.json --out data/spots_chiba.js
 
 # 6. ★人手レビュー：地図上で座標を確認・修正する（その場でJSONに保存される）
 python3 tools/review_spots.py --spots data/spots_chiba.json
+
+# iPad / GitHub Codespaces から使う場合
+python3 tools/review_spots.py --spots data/spots_chiba.json --ipad
 ```
 
 **レビューは省略しない。** 住所からの機械変換は丁目レベルで外れることがあり、
@@ -100,6 +104,7 @@ python3 tools/probe_endpoints.py --url https://pub.os-alert.info/chiba/devmap --
 | `test_fetch_amedas.py` | アメダスJSONの解釈（品質フラグ・[度,分]変換）、IDW内挿、危険度出力 |
 | `test_review_spots.py` | レビュー画面のサーバ側（保存・バックアップ・進捗集計・異常系・再開） |
 | `verify_prototype.js` | ブラウザでの実動作13項目（雨量フィルタ・現在地アラート・クールダウン・ラベル・障害時の劣化動作） |
+| `verify_ipad.js` | iPad 横/縦でのはみ出し・タップ領域・主要操作 14項目 |
 
 ## ファイル
 
