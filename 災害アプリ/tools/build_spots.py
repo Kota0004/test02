@@ -77,10 +77,19 @@ def norm(s: str | None) -> str:
 PAREN_RE = re.compile(r"[（(]([^）)]*)[）)]")
 
 
+# 「袖ケ浦１丁目１１番地先」の末尾「地先」は住所ではなく「その付近」の意。
+# 付けたまま検索すると外れやすいので落とす（「１１番」までにする）。
+CHISAKI_RE = re.compile(r"(地先|先)$")
+
+
 def build_address(rec: dict, pref: str) -> str:
-    """市町村名 + 地先名 から、ジオコーディングに渡す住所を組み立てる。"""
+    """市町村名 + 地先名 から、ジオコーディングに渡す住所を組み立てる。
+
+    norm() が NFKC 正規化するので、全角数字「１丁目」は「1丁目」になる。
+    """
     city = norm(rec.get("address", ""))
     locality = PAREN_RE.sub("", norm(rec.get("locality", ""))).strip()
+    locality = CHISAKI_RE.sub("", locality)
     addr = f"{city}{locality}"
     if addr and not re.match(r"^..[都道府県]", addr):
         addr = pref + addr
@@ -258,7 +267,9 @@ def extract_rows(pdf_path: Path, dump_text: bool = False, only_page: int = 0) ->
                     for idx, key in best_map.items():
                         if idx < len(raw):
                             rec[key] = norm(raw[idx])
-                    if any(rec.get(k) for k in ("name", "address", "road")):
+                    # 「国 / 県 / 市町村」のような小見出し行を data として拾わないよう、
+                    # 市町村名・路線名・地先名のどれかが入っている行だけを採用する
+                    if any(rec.get(k) for k in ("name", "address", "road", "locality")):
                         rows.append(rec)
 
     if dump_text:

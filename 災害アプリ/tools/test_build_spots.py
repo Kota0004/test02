@@ -112,6 +112,36 @@ def test_map_and_list_pdf():
               kinds[3] == "underpass_gravity", kinds[3])
         check("ポンプの有無を種別に反映する", kinds[1] == "underpass_pump", kinds[1])
         check("続きページの行も住所になる", addrs[4].startswith("サンプル県ダミー町"), addrs[4])
+        check("「問合せ先」の小見出し行（国/県/市町村）を地点として拾わない",
+              all("国" != (r.get("admin") or "") or r.get("locality") for r in rows_all),
+              str([r.get("admin") for r in rows_all]))
+        check("全角数字と改行が正規化される（１丁目→1丁目）",
+              addrs[0] == "サンプル県サンプル市サンプル町1丁目11番", addrs[0])
+        check("末尾の「地先」を住所から落とす", not addrs[0].endswith("地先"), addrs[0])
+
+
+def test_chisaki_and_paren():
+    """実物にある住所表記のくせを個別に確認する。"""
+    cases = [
+        ({"address": "習志野市", "locality": "袖ケ浦１丁目１１番地先"},
+         "千葉県習志野市袖ケ浦1丁目11番"),
+        ({"address": "市原市", "locality": "五井（五井アンダーパス）"},
+         "千葉県市原市五井"),
+        ({"address": "袖ケ浦市", "locality": "神納4191-1（東京湾アクアライン連絡道ガード下）"},
+         "千葉県袖ケ浦市神納4191-1"),
+        ({"address": "千葉県銚子市", "locality": "松岸町1-1"},
+         "千葉県銚子市松岸町1-1"),          # すでに県が付いていれば足さない
+    ]
+    for rec, want in cases:
+        got = bs.build_address(rec, "千葉県")
+        check(f"住所の組み立て {rec['locality'][:14]}", got == want, f"実際={got} 期待={want}")
+
+    check("括弧内の通称を地点名にする（五井アンダーパス）",
+          bs.build_name({"address": "市原市", "locality": "五井（五井アンダーパス）"}, "-")
+          == "五井アンダーパス")
+    check("通称が無ければ地先名をそのまま地点名にする",
+          bs.build_name({"address": "習志野市", "locality": "袖ケ浦１丁目１１番地先"}, "-")
+          == "袖ケ浦1丁目11番地先")
 
 
 def test_header_mapping_real():
@@ -159,6 +189,7 @@ def main():
     test_extract()
     test_map_and_list_pdf()
     test_header_mapping_real()
+    test_chisaki_and_paren()
     test_geocode_with_fake_session()
     print("===== build_spots.py 検証 =====")
     for s in ok:
