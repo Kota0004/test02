@@ -88,10 +88,12 @@ Codespacesのファイル一覧（左側）に**ドラッグ＆ドロップ**す
 うまくいかない場合は、Codespacesのターミナルで直接ダウンロードするのが確実です。
 
 ```bash
-curl -o 一覧表.pdf "＜PDFのURL＞"
+curl -o 一覧表.pdf "PDFのURLをここに貼る"
 ```
 
 > PDFのURLは、Safariでリンクを長押し →「リンクをコピー」で取れます。
+> **貼り付けるのはURLだけ**です。`< >` や `＜ ＞` で囲むと
+> `URL rejected: Port number was not a decimal number` というエラーになります。
 
 ### A-6. 保存して終わる
 

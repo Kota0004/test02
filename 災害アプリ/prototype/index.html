@@ -143,8 +143,13 @@
         <option value="500" selected>500 m</option>
         <option value="1000">1,000 m</option>
       </select>
-      <label style="margin-left:auto"><input type="checkbox" id="speak" checked> 音声</label>
+      <label style="margin-left:auto"><input type="checkbox" id="speak" checked> 音声で読み上げ</label>
     </div>
+    <button class="btn off" id="speakTest" style="margin-top:8px">🔊 音声を試す</button>
+    <p class="hint" id="speakStat">
+      危険な地点に近づくと、<b>この声で読み上げます</b>。運転中に画面を見ないで済むようにするためのものです。<br>
+      iPhone・iPadでは、一度この［音声を試す］を押しておかないと読み上げが鳴らないことがあります
+      （ブラウザが、操作なしの発話を止めるため）。</p>
     <p class="hint" id="geoStat">未開始。ブラウザの位置情報許可が必要です（HTTPS または localhost）。<br>
       テスト用: 地図上を <b>Shift＋クリック</b> すると、そこを現在地とみなして判定します。</p>
   </div>
@@ -408,13 +413,42 @@
       `<b>${s.name}</b><br>${lv.text}<br><span style="opacity:.85">${s.reason}</span>`;
     el.classList.add('show');
 
-    if (document.getElementById('speak').checked && 'speechSynthesis' in window) {
-      const u = new SpeechSynthesisUtterance(
-        `${Math.round(s.dist/100)*100}メートル先、${M.KIND_LABEL[s.kind]}。${lv.text}。`);
-      u.lang = 'ja-JP'; u.rate = 1.05;
-      speechSynthesis.cancel(); speechSynthesis.speak(u);
+    speak(`${Math.round(s.dist/100)*100}メートル先、${M.KIND_LABEL[s.kind]}。${lv.text}。`);
+  }
+
+  /* ---------- 読み上げ ----------
+     iOS Safari は「利用者の操作をきっかけにした発話」しか許可しないため、
+     位置情報のコールバックから直接しゃべらせても無音になることがある。
+     一度［音声を試す］を押してもらうと以降は鳴るので、押されたかを覚えておき、
+     未解錠のまま通知が出たときは画面で案内する。 */
+  let speechUnlocked = false;
+
+  function speak(text){
+    if (!document.getElementById('speak').checked) return;
+    if (!('speechSynthesis' in window)) return;
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'ja-JP'; u.rate = 1.05;
+    speechSynthesis.cancel();
+    speechSynthesis.speak(u);
+    if (!speechUnlocked) {
+      document.getElementById('speakStat').innerHTML =
+        '読み上げが鳴らない場合は、上の <b>［🔊 音声を試す］</b> を一度押してから、' +
+        'もう一度お試しください（端末の音量とサイレントスイッチもご確認を）。';
     }
   }
+
+  document.getElementById('speakTest').addEventListener('click', () => {
+    const stat = document.getElementById('speakStat');
+    if (!('speechSynthesis' in window)) {
+      stat.textContent = 'このブラウザは読み上げに対応していません。通知は画面表示のみになります。';
+      return;
+    }
+    document.getElementById('speak').checked = true;
+    speechUnlocked = true;
+    speak('500メートル先、地下道。冠水の可能性が高い場所です。迂回を検討してください。');
+    stat.innerHTML = '再生しました。実際の通知でもこの声で読み上げます。<br>' +
+      '聞こえない場合は、端末の音量と<b>サイレントスイッチ</b>を確認してください。';
+  });
   function hideAlert(){ document.getElementById('alert').classList.remove('show'); }
 
   /* ---------- UI 配線 ---------- */
