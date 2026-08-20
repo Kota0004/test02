@@ -91,14 +91,39 @@ def test_map_and_list_pdf():
           [ln for ln in out.splitlines() if ln.startswith("--- 1ページ")])
 
     rows_all = bs.extract_rows(FIXTURE_MAP)
-    check("全ページ走査でも一覧表の3行だけが取れる（地図から誤検出しない）",
-          len(rows_all) == 3, f"実際={len(rows_all)}行")
+    check("見出しの無い続きページ(2/2)も読み、全5行が取れる",
+          len(rows_all) == 5, f"実際={len(rows_all)}行")
 
     rows_p2 = bs.extract_rows(FIXTURE_MAP, only_page=2)
-    check("--page 2 でそのページだけ読める", len(rows_p2) == 3, f"実際={len(rows_p2)}行")
+    check("--page 2 でそのページの3行だけ読める", len(rows_p2) == 3, f"実際={len(rows_p2)}行")
 
     rows_p1 = bs.extract_rows(FIXTURE_MAP, only_page=1)
     check("--page 1（地図）からは行が取れない", len(rows_p1) == 0, f"実際={len(rows_p1)}行")
+
+    if len(rows_all) == 5:
+        addrs = [bs.build_address(r, "サンプル県") for r in rows_all]
+        names = [bs.build_name(r, "") for r in rows_all]
+        kinds = [bs.guess_kind(r.get("kind_raw", ""), r.get("locality", ""),
+                               r.get("name", ""), r.get("road", "")) for r in rows_all]
+        check("市町村名＋地先名から住所を組み立てる（括弧の通称は除く）",
+              addrs[3] == "サンプル県テスト市テスト4191-1", addrs[3])
+        check("括弧内の通称を地点名にする", names[3] == "サンプル連絡道ガード下", names[3])
+        check("通称から種別を推定する（ガード下→自然排水アンダーパス）",
+              kinds[3] == "underpass_gravity", kinds[3])
+        check("ポンプの有無を種別に反映する", kinds[1] == "underpass_pump", kinds[1])
+        check("続きページの行も住所になる", addrs[4].startswith("サンプル県ダミー町"), addrs[4])
+
+
+def test_header_mapping_real():
+    """実物の見出し（国交省 千葉県版）で列が正しく対応づくか。"""
+    header = ["No.", "市町村名", "道路種別", "路線名", "地先名又は通称名", "国", "県", "市町村"]
+    m = bs.map_headers(header)
+    check("実物の見出しが正しく対応づく",
+          m.get(0) == "no" and m.get(1) == "address" and m.get(2) == "road_type"
+          and m.get(3) == "road" and m.get(4) == "locality",
+          str(m))
+    check("問合せ先の「市町村」欄が住所を上書きしない", m.get(7) != "address", str(m.get(7)))
+    check("「道路種別」が冠水箇所の種別として誤読されない", m.get(2) == "road_type", str(m.get(2)))
 
 
 def test_geocode_with_fake_session():
@@ -133,6 +158,7 @@ def main():
     test_confidence()
     test_extract()
     test_map_and_list_pdf()
+    test_header_mapping_real()
     test_geocode_with_fake_session()
     print("===== build_spots.py 検証 =====")
     for s in ok:

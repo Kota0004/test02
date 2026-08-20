@@ -39,14 +39,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 GEOCODER = "https://msearch.gsi.go.jp/address-search/AddressSearch?q={}"
 
-# 表ヘッダの表記ゆれ → 内部キー
+# 表ヘッダの表記ゆれ → 内部キー。
+# 上にあるものから順に判定するので、より具体的な見出しを先に置くこと
+# （例: 「道路種別」は冠水箇所の種別ではなく国道/県道/市道の区分なので、
+#  「種別」で kind_raw に吸われる前に road_type として拾う）。
 HEADER_MAP = {
     "no": ["no", "no.", "番号", "整理番号", "通し番号", "地点番号", "箇所番号"],
+    "road_type": ["道路種別", "道路区分"],
+    # 「所在」「地点」は 所在地 / 地点名 に部分一致してしまうので入れない
+    "locality": ["地先名又は通称名", "地先名", "通称名", "地先"],
     "road": ["路線名", "路線", "道路名", "路線番号"],
     "name": ["箇所名", "地点名", "名称", "冠水箇所", "交差点名", "アンダーパス名", "箇所"],
-    "address": ["所在地", "住所", "市町村", "市区町村", "位置"],
+    "address": ["所在地", "住所", "市町村名", "市町村", "市区町村", "位置"],
     "kind_raw": ["種別", "構造", "区分", "形式", "備考"],
-    "admin": ["管理者", "道路管理者", "管理機関"],
+    "admin": ["管理者", "道路管理者", "管理機関", "問合せ先"],
 }
 
 # 記載文言 → docs/04-3-1 の kind
@@ -66,6 +72,31 @@ def norm(s: str | None) -> str:
     return re.sub(r"\s+", "", s).strip()
 
 
+# 「神納4191-1（東京湾アクアライン連絡道ガード下）」の括弧内は通称。
+# 住所としては邪魔だが、種別の手がかり（ガード下・アンダーパス等）になる。
+PAREN_RE = re.compile(r"[（(]([^）)]*)[）)]")
+
+
+def build_address(rec: dict, pref: str) -> str:
+    """市町村名 + 地先名 から、ジオコーディングに渡す住所を組み立てる。"""
+    city = norm(rec.get("address", ""))
+    locality = PAREN_RE.sub("", norm(rec.get("locality", ""))).strip()
+    addr = f"{city}{locality}"
+    if addr and not re.match(r"^..[都道府県]", addr):
+        addr = pref + addr
+    return addr
+
+
+def build_name(rec: dict, fallback: str) -> str:
+    """地点名。通称（括弧内）があればそれを使う。"""
+    locality = norm(rec.get("locality", ""))
+    m = PAREN_RE.search(locality)
+    if m and m.group(1):
+        return m.group(1)
+    return (norm(rec.get("name", "")) or PAREN_RE.sub("", locality).strip()
+            or norm(rec.get("road", "")) or fallback)
+
+
 def guess_kind(*texts: str) -> str:
     blob = norm("".join(t or "" for t in texts))
     for keys, kind in KIND_RULES:
@@ -77,13 +108,21 @@ def guess_kind(*texts: str) -> str:
 
 
 def map_headers(header_row: list[str]) -> dict[int, str]:
-    """表の1行目から「列インデックス → 内部キー」を作る。"""
-    out = {}
+    """表の1行目から「列インデックス → 内部キー」を作る。
+
+    同じ内部キーに複数の列が当たることがある（例: 「市町村名」と、問合せ先の
+    「市町村」欄）。後の列で上書きされると住所が壊れるので、先に出た列を優先する。
+    """
+    out: dict[int, str] = {}
+    used: set[str] = set()
     for i, cell in enumerate(header_row):
         c = norm(cell).lower().replace("　", "")
         for key, alts in HEADER_MAP.items():
+            if key in used:
+                continue
             if any(a in c for a in alts):
-                out.setdefault(i, key)
+                out[i] = key
+                used.add(key)
                 break
     return out
 
@@ -147,6 +186,34 @@ def inspect_pdf(pdf_path: Path) -> None:
         print("  掲載元: https://www.ktr.mlit.go.jp/chiba/chiba_index030.html")
 
 
+def dump_table(pdf_path: Path, only_page: int = 0, max_rows: int = 8) -> None:
+    """表のセルを列番号つきでそのまま表示する。列の対応づけを確認するためのもの。"""
+    import logging
+
+    import pdfplumber
+
+    logging.getLogger("pdfminer").setLevel(logging.ERROR)
+
+    with pdfplumber.open(str(pdf_path)) as pdf:
+        for pno, page in enumerate(pdf.pages, 1):
+            if only_page and pno != only_page:
+                continue
+            for ti, table in enumerate(page.extract_tables() or [], 1):
+                print(f"=== {pno}ページ / 表{ti}: {len(table)}行 × "
+                      f"{max(len(r) for r in table)}列")
+                for ri, row in enumerate(table[:max_rows]):
+                    print(f"  [{ri}] " + " | ".join(
+                        f"{ci}:{(c or '').strip()[:22]!r}" for ci, c in enumerate(row)))
+                    if ri == 0:
+                        m = map_headers([c or "" for c in row])
+                        if m:
+                            print(f"       → 対応づけ: "
+                                  + ", ".join(f"{k}列={v}" for k, v in sorted(m.items())))
+                if len(table) > max_rows:
+                    print(f"  … 残り {len(table) - max_rows} 行")
+                print()
+
+
 def extract_rows(pdf_path: Path, dump_text: bool = False, only_page: int = 0) -> list[dict]:
     import logging
 
@@ -156,6 +223,8 @@ def extract_rows(pdf_path: Path, dump_text: bool = False, only_page: int = 0) ->
     logging.getLogger("pdfminer").setLevel(logging.ERROR)
 
     rows: list[dict] = []
+    carried_map: dict[int, str] = {}
+    carried_ncols = 0
     with pdfplumber.open(str(pdf_path)) as pdf:
         for pno, page in enumerate(pdf.pages, 1):
             if only_page and pno != only_page:
@@ -174,8 +243,16 @@ def extract_rows(pdf_path: Path, dump_text: bool = False, only_page: int = 0) ->
                     m = map_headers([c or "" for c in table[i]])
                     if len(m) > len(best_map):
                         best_i, best_map = i, m
-                if not best_map:
+
+                if best_map:
+                    carried_map, carried_ncols = best_map, len(table[best_i])
+                elif carried_map and len(table[0]) == carried_ncols:
+                    # 「(2/2)」のような続きのページには見出しが無い。
+                    # 列数が同じなら直前の見出しを引き継ぐ（後半が丸ごと落ちるのを防ぐ）。
+                    best_i, best_map = -1, carried_map
+                else:
                     continue
+
                 for raw in table[best_i + 1:]:
                     rec = {"_page": pno}
                     for idx, key in best_map.items():
@@ -293,6 +370,8 @@ def main() -> int:
     ap.add_argument("--dump-text", action="store_true", help="PDFのテキストを表示して終了")
     ap.add_argument("--inspect", action="store_true",
                     help="どのページが一覧表かを1ページずつ調べて表示する")
+    ap.add_argument("--dump-table", action="store_true",
+                    help="表のセルをそのまま表示する（列の並びを確認するとき）")
     ap.add_argument("--page", type=int, default=0,
                     help="指定ページだけを対象にする（0=全ページ）")
     ap.add_argument("--source", default="", help="出典表記（例: 国交省千葉国道事務所 2026-06-30版）")
@@ -311,6 +390,10 @@ def main() -> int:
 
     if args.inspect:
         inspect_pdf(pdf_path)
+        return 0
+
+    if args.dump_table:
+        dump_table(pdf_path, args.page)
         return 0
 
     rows = extract_rows(pdf_path, dump_text=args.dump_text, only_page=args.page)
@@ -333,24 +416,25 @@ def main() -> int:
     cache: dict = {}
     spots, review = [], []
     for i, r in enumerate(rows, 1):
-        addr = r.get("address", "")
-        if addr and not addr.startswith(args.pref) and not re.match(r"^..[都道府県]", addr):
-            addr = args.pref + addr
-        query = addr or f"{args.pref}{r.get('name','')}"
+        sid = f"{args.area}-{int(r.get('no') or i):04d}"
+        addr = build_address(r, args.pref)
+        query = addr or f"{args.pref}{r.get('name', '')}"
         res = geocode(query, session, args.sleep, cache) if session else None
         conf, note = confidence_of(query, res)
 
-        sid = f"{args.area}-{int(r.get('no') or i):04d}"
         spot = {
             "id": sid,
-            "name": r.get("name") or r.get("road") or sid,
-            "kind": guess_kind(r.get("kind_raw", ""), r.get("name", ""), r.get("road", "")),
+            "name": build_name(r, sid),
+            "kind": guess_kind(r.get("kind_raw", ""), r.get("locality", ""),
+                               r.get("name", ""), r.get("road", "")),
             "lon": res["lon"] if res else None,
             "lat": res["lat"] if res else None,
             "dz": 0.0,                    # enrich_dem.py で埋める
             "hist": 0,                    # 履歴が判明したら更新
             "road": r.get("road", ""),
+            "road_type": r.get("road_type", ""),
             "address": addr,
+            "locality": r.get("locality", ""),
             "evidence": {
                 "source": args.source or f"{pdf_path.name}",
                 "confidence": round(conf, 2),
@@ -360,6 +444,7 @@ def main() -> int:
         spots.append(spot)
         review.append({
             "id": sid, "name": spot["name"], "road": spot["road"], "address": addr,
+            "locality": r.get("locality", ""),
             "kind": spot["kind"], "kind_raw": r.get("kind_raw", ""),
             "lon": spot["lon"], "lat": spot["lat"],
             "geocode_title": res["title"] if res else "",
