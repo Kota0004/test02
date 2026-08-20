@@ -9,6 +9,7 @@ Python・必要なライブラリ・node・外部サイトへの到達性・デ�
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -18,13 +19,57 @@ ROOT = Path(__file__).resolve().parent.parent
 
 OK, WARN, NG = "✅", "⚠️ ", "❌"
 
-# 到達できないと困る外部サイト（用途つき）
-SITES = [
-    ("www.jma.go.jp", "気象庁（アメダス・ナウキャスト）", True),
-    ("cyberjapandata.gsi.go.jp", "国土地理院（地図タイル・標高タイル）", True),
-    ("msearch.gsi.go.jp", "国土地理院（住所→座標の変換）", True),
-    ("www.ktr.mlit.go.jp", "国交省 関東地整（冠水箇所PDF）", False),
-    ("pub.os-alert.info", "千葉市 地下道冠水情報システム", False),
+# 外部データの確認。
+# 「ホストが応答するか」ではなく「実際に使うURLが期待どおりのデータを返すか」を見る。
+# トップページが 200 でも API が使えないことがあるため（例: 403 を返す検索API）。
+
+
+def _v_amedas(r):
+    """最新観測時刻が ISO 形式で返ってくるか"""
+    t = r.text.strip()[:32]
+    ok = bool(re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}", t))
+    return ok, f"最新観測時刻 {t}" if ok else f"想定外の応答: {t!r}"
+
+
+def _v_png(r):
+    ct = r.headers.get("Content-Type", "")
+    ok = ct.startswith("image/") and len(r.content) > 100
+    return ok, f"{ct} / {len(r.content)} バイト"
+
+
+def _v_geocode(r):
+    """住所検索が座標を返すか（本番と同じクエリで確認する）"""
+    try:
+        d = r.json()
+    except ValueError:
+        return False, f"JSONではない応答（HTTP {r.status_code}）"
+    if not isinstance(d, list) or not d:
+        return False, "候補が0件"
+    try:
+        lon, lat = d[0]["geometry"]["coordinates"][:2]
+        title = d[0]["properties"].get("title", "")
+    except (KeyError, TypeError, IndexError):
+        return False, "座標を取り出せない形式"
+    return True, f"「{title}」→ {lat:.4f}, {lon:.4f}"
+
+
+def _v_ok(r):
+    return r.status_code == 200, f"HTTP {r.status_code}"
+
+
+CHECKS = [
+    ("気象庁 アメダス（リアルタイム雨量）",
+     "https://www.jma.go.jp/bosai/amedas/data/latest_time.txt", True, _v_amedas),
+    ("国土地理院 地図タイル（地図の表示）",
+     "https://cyberjapandata.gsi.go.jp/xyz/pale/12/3642/1613.png", True, _v_png),
+    ("国土地理院 標高タイル（窪地の判定）",
+     "https://cyberjapandata.gsi.go.jp/xyz/dem_png/14/14568/6455.png", True, _v_png),
+    ("国土地理院 住所検索（住所→座標）",
+     "https://msearch.gsi.go.jp/address-search/AddressSearch?q=千葉県千葉市中央区", True, _v_geocode),
+    ("国交省 関東地整（冠水箇所PDFの掲載ページ）",
+     "https://www.ktr.mlit.go.jp/chiba/chiba_index030.html", False, _v_ok),
+    ("千葉市 地下道冠水情報システム",
+     "https://pub.os-alert.info/chiba/devmap", False, _v_ok),
 ]
 
 results: list[tuple[str, str]] = []
@@ -85,27 +130,40 @@ def check_node() -> None:
 
 
 def check_network() -> None:
-    head("外部サイトへの到達性")
+    head("外部データの取得（実際に使うURLで確認）")
     try:
         import requests
     except Exception:                                       # noqa: BLE001
         say(WARN, "requests が無いため確認できません")
         return
-    blocked_required = []
-    for host, why, required in SITES:
+    broken = []
+    for label, url, required, validate in CHECKS:
         try:
-            r = requests.get(f"https://{host}/", timeout=10,
+            r = requests.get(url, timeout=15,
                              headers={"User-Agent": "mizumichi-doctor/0.1"})
-            say(OK, f"{host} — {why}（HTTP {r.status_code}）")
         except Exception as e:                              # noqa: BLE001
-            mark = NG if required else WARN
-            say(mark, f"{host} に到達できません — {why}（{type(e).__name__}）")
+            say(NG if required else WARN, f"{label} — 接続できません（{type(e).__name__}）")
             if required:
-                blocked_required.append(host)
-    if blocked_required:
+                broken.append(label)
+            continue
+
+        try:
+            good, detail = validate(r)
+        except Exception as e:                              # noqa: BLE001
+            good, detail = False, f"確認中にエラー（{type(e).__name__}）"
+
+        if good:
+            say(OK, f"{label} — {detail}")
+        else:
+            say(NG if required else WARN, f"{label} — HTTP {r.status_code} / {detail}")
+            if required:
+                broken.append(label)
+
+    if broken:
         next_steps.append(
-            "必須サイトに到達できません。社内ネットワーク・プロキシ・VPNを確認するか、"
-            "別のネットワークで実行してください")
+            "次のデータが取得できません: " + " / ".join(broken) + "\n"
+            "        ネットワーク（プロキシ・VPN・学内ネットワーク）を確認するか、\n"
+            "        この表示をそのまま相談してください")
 
 
 def check_tests() -> None:
