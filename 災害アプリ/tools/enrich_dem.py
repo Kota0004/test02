@@ -23,6 +23,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import geo  # noqa: E402
 
+# 道路の周囲100mでこれ以上の高低差は現実的でない。座標のずれを疑う目安。
+IMPLAUSIBLE_DZ_M = 6.0
+
 
 class ElevationSampler:
     """地理院 PNG 標高タイルから標高を引く。タイルはメモリにキャッシュする。
@@ -103,6 +106,7 @@ def main() -> int:
     sampler = ElevationSampler(zoom=args.zoom)
 
     updated = skipped = 0
+    suspicious: list[str] = []
     for s in spots:
         if s.get("lon") is None or s.get("lat") is None:
             skipped += 1
@@ -115,10 +119,30 @@ def main() -> int:
         s["dz"] = round(dz, 2)
         s.setdefault("params", {})["dz_source"] = f"地理院標高タイル z{args.zoom} r{args.radius:.0f}m"
         updated += 1
+
+        # 道路として現実的でない起伏は、座標がずれている疑いが濃い
+        # （崖・造成地・高架の上などに落ちている）。レビューで直す対象として印を付ける。
+        note = ""
+        if abs(dz) > IMPLAUSIBLE_DZ_M:
+            s["params"]["dz_warning"] = (
+                f"周囲との高低差が {dz:+.1f}m と大きすぎます。座標がずれている可能性があります")
+            suspicious.append(s["id"])
+            note = "  ← ⚠ 座標がずれている疑い"
         print(f"  + {s['id']} {s['name']}: dz={dz:+.2f}m "
-              f"(標高 {info['center']:.1f}m / 周囲中央値 {info['ring_median']:.1f}m)")
+              f"(標高 {info['center']:.1f}m / 周囲中央値 {info['ring_median']:.1f}m){note}")
 
     print(f"\n更新 {updated} 件 / スキップ {skipped} 件")
+    if suspicious:
+        print(f"⚠ 高低差が不自然な地点: {len(suspicious)} 件 → {suspicious[:10]}"
+              + (" ほか" if len(suspicious) > 10 else ""))
+        print("  座標レビュー（tools/review_spots.py）で位置を直してから、"
+              "このコマンドをもう一度実行してください。")
+
+    verified = sum(1 for s in spots if (s.get("evidence") or {}).get("verified_at"))
+    if verified < len(spots) * 0.5:
+        print(f"\n※ 座標のレビュー済みは {verified}/{len(spots)} 件です。")
+        print("  dz は座標から計算するので、**先に座標を直してから**もう一度実行すると")
+        print("  精度が上がります（tools/review_spots.py）。")
     if args.dry_run:
         print("(--dry-run のため書き込みません)")
         return 0

@@ -50,15 +50,22 @@ python3 tools/build_spots.py --pdf 一覧表.pdf --area chiba \
     --source "国交省千葉国道事務所 道路冠水箇所マップ（2026-06-30版）" \
     --out data/spots_chiba.json
 
-# 5. 標高タイルから相対標高 dz を付けて閾値を補正できるようにする
+# 5. 標高タイルから相対標高 dz を付ける（この時点では目安。レビュー後にやり直す）
 python3 tools/enrich_dem.py --in data/spots_chiba.json --out data/spots_chiba.json
 
 # 6. ★人手レビュー：地図上で座標を確認・修正する（その場でJSONに保存される）
 python3 tools/review_spots.py --spots data/spots_chiba.json
 
+# 7. 座標が正しくなったので dz を計算し直す
+python3 tools/enrich_dem.py --in data/spots_chiba.json --out data/spots_chiba.json
+
 # iPad / GitHub Codespaces から使う場合
 python3 tools/review_spots.py --spots data/spots_chiba.json --ipad
 ```
+
+**dz は座標から計算するので、レビューの前後で2回実行する。** レビュー前の値は目安に過ぎず、
+座標が丁目の中心にあるまま測った高低差には意味がない。
+周囲100mとの高低差が ±6m を超える地点は「座標がずれている疑い」として警告する。
 
 **レビューは省略しない。** 住所からの機械変換は丁目レベルで外れることがあり、
 誤った地点を「危険」と表示するのは見逃しとは別種の害になる（docs/07）。

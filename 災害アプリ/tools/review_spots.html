@@ -163,9 +163,11 @@
               <option value="river_adjacent">河川隣接</option>
             </select>
           </label>
+          <span class="meta" id="eKindSrc"></span>
           <label>過去の冠水回数 <input type="number" id="eHist" min="0" max="20" step="1"></label>
           <span class="meta" id="eCoord"></span>
         </div>
+        <div class="meta" id="dzWarn" style="color:#e8c33c"></div>
         <div id="saved"></div>
       </div>
       <div class="actions">
@@ -287,6 +289,19 @@
     document.getElementById('eKind').value = s.kind || 'lowland';
     document.getElementById('eHist').value = s.hist || 0;
 
+    // 種別が資料由来か既定値かを出す。既定値のまま放置されると閾値が実態と合わない
+    const src = s.kind_source || '';
+    const kindSrc = document.getElementById('eKindSrc');
+    kindSrc.innerHTML = !src ? ''
+      : /既定値/.test(src)
+        ? `<b style="color:#e8c33c">⚠ 種別は${esc(src)}</b>`
+        : `（${esc(src)}）`;
+
+    // 標高から見て座標がずれていそうな地点は目立たせる
+    const warn = (s.params || {}).dz_warning;
+    document.getElementById('dzWarn').innerHTML = warn
+      ? `⚠ ${esc(warn)}` : '';
+
     const hasXY = s.lon != null && s.lat != null;
     const pos = hasXY ? [s.lon, s.lat] : CENTER_FALLBACK;
     map.jumpTo({ center: pos, zoom: hasXY ? 17 : 12 });
@@ -340,7 +355,10 @@
 
   document.getElementById('eKind').addEventListener('change', e => {
     const s = current(); if (!s) return;
-    s.kind = e.target.value; save(s, null);
+    s.kind = e.target.value;
+    s.kind_source = '人手で確認';
+    document.getElementById('eKindSrc').innerHTML = '（人手で確認）';
+    save(s, null);
   });
   document.getElementById('eHist').addEventListener('change', e => {
     const s = current(); if (!s) return;
@@ -352,7 +370,8 @@
     fetch('/api/spot', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ id:s.id, lon:s.lon, lat:s.lat, kind:s.kind,
-                             hist:s.hist, status: status || undefined })
+                             kind_source:s.kind_source, hist:s.hist,
+                             status: status || undefined })
     }).then(r => r.json()).then(() => {
       flash(status === 'ok' ? '✓ 確認済みとして保存しました'
           : status === 'excluded' ? '✓ 除外として保存しました' : '✓ 保存しました');

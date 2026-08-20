@@ -107,13 +107,24 @@ def build_name(rec: dict, fallback: str) -> str:
 
 
 def guess_kind(*texts: str) -> str:
+    return guess_kind_with_reason(*texts)[0]
+
+
+def guess_kind_with_reason(*texts: str) -> tuple[str, str]:
+    """種別と、その根拠を返す。
+
+    根拠を残すのは、レビューする人が「資料に書いてあった」のか
+    「手がかりが無くて既定値になった」のかを区別できるようにするため。
+    既定値のまま放置された地点は、閾値が実態と合わない可能性が残る。
+    """
     blob = norm("".join(t or "" for t in texts))
     for keys, kind in KIND_RULES:
-        if any(k in blob for k in keys):
-            return kind
+        hit = next((k for k in keys if k in blob), None)
+        if hit:
+            return kind, f"資料の「{hit}」から推定"
     # 判別できない場合は最も安全側（閾値が低い＝危険と判定されやすい）に倒す。
     # docs/03「安全側に倒す」より。
-    return "underpass_gravity"
+    return "underpass_gravity", "手がかりなし（既定値・要確認）"
 
 
 def map_headers(header_row: list[str]) -> dict[int, str]:
@@ -358,6 +369,13 @@ def report_anomalies(rows: list[dict]) -> None:
     if no_addr:
         problems.append(f"市町村名も地先名も無い行: {no_addr}（一覧表以外から拾った可能性）")
 
+    kinds = collections.Counter(
+        guess_kind_with_reason(r.get("kind_raw", ""), r.get("locality", ""),
+                               r.get("name", ""), r.get("road", ""))[1]
+        for r in rows)
+    for reason, n in kinds.most_common():
+        problems.append(f"種別の根拠「{reason}」: {n} 件")
+
     if problems:
         print("  点検:")
         for x in problems:
@@ -474,11 +492,13 @@ def main() -> int:
         res = geocode(query, session, args.sleep, cache) if session else None
         conf, note = confidence_of(query, res)
 
+        kind, kind_reason = guess_kind_with_reason(
+            r.get("kind_raw", ""), r.get("locality", ""), r.get("name", ""), r.get("road", ""))
         spot = {
             "id": sid,
             "name": build_name(r, sid),
-            "kind": guess_kind(r.get("kind_raw", ""), r.get("locality", ""),
-                               r.get("name", ""), r.get("road", "")),
+            "kind": kind,
+            "kind_source": kind_reason,
             "lon": res["lon"] if res else None,
             "lat": res["lat"] if res else None,
             "dz": 0.0,                    # enrich_dem.py で埋める
@@ -497,7 +517,8 @@ def main() -> int:
         review.append({
             "id": sid, "name": spot["name"], "road": spot["road"], "address": addr,
             "locality": r.get("locality", ""),
-            "kind": spot["kind"], "kind_raw": r.get("kind_raw", ""),
+            "kind": spot["kind"], "kind_source": kind_reason,
+            "kind_raw": r.get("kind_raw", ""),
             "lon": spot["lon"], "lat": spot["lat"],
             "geocode_title": res["title"] if res else "",
             "confidence": round(conf, 2), "note": note,

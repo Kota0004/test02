@@ -103,7 +103,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(404, b'{"error":"unknown id"}', "application/json")
                 return
 
-            for key in ("lon", "lat", "kind", "hist", "name", "note"):
+            for key in ("lon", "lat", "kind", "kind_source", "hist", "name", "note"):
                 if key in patch and patch[key] is not None:
                     spot[key] = patch[key]
             status = patch.get("status")
@@ -159,6 +159,8 @@ def main() -> int:
     print(f"  URL : {url}")
     print("  操作: → 次へ / ← 前へ / Enter この位置でOK")
     print("  終了: Ctrl+C（変更は操作のたびに保存されています）")
+    print("  ※ 起動中はこのファイルを他のツールで編集しないでください"
+          "（画面側の内容で上書きされます）")
     if args.host == "0.0.0.0":
         print("  ※ Codespaces では［ポート］タブの 8765 を開いてください")
 
