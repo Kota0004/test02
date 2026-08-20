@@ -27,12 +27,17 @@ Microsoftのクラウド上にLinuxのパソコンが立ち上がり、**Safari�
 ### A-1. 起動する（初回のみ3〜5分）
 
 1. Safari で <https://github.com/Kota0004/test02> を開く
-2. 緑の **「Code」** ボタン → **「Codespaces」** タブ → **「Create codespace on ...」**
-3. ブランチを `claude/flood-road-alert-app-9lozqq` に切り替える
-   （画面左下のブランチ名をタップ → 選択）
+2. **先にブランチを切り替える。** ファイル一覧の上にあるブランチ名のボタンをタップし、
+   `claude/flood-road-alert-app-9lozqq` を選ぶ
+   - **この順番が大事。** Codespace は「いま見ているブランチ」に対して作られる。
+     このリポジトリの既定ブランチは別のものなので、先に切り替えないと
+     設定ファイル（`.devcontainer/`）が無い状態で作られ、ライブラリが自動で入らない
+3. 緑の **「Code」** ボタン → **「Codespaces」** タブ → **「Create codespace on claude/flood-road-alert-app-9lozqq」**
 4. 画面下の「ターミナル」が使えるようになったら準備完了
 
 > ⚠️ 初回は環境の構築に3〜5分かかります。`postCreateCommand` が終わるまで待ってください。
+> ターミナルが見当たらないときは、左上の **☰ メニュー → Terminal → New Terminal**。
+> 外付けキーボードがあれば **Ctrl + `**（バッククォート）でも開きます。
 
 ### A-2. 動作確認
 
@@ -130,6 +135,7 @@ GitHubのWeb UI（Safari）で中身を確認できます。
 1. <https://github.com/Kota0004/test02/settings/pages> を開く
 2. **Source** を「Deploy from a branch」
 3. **Branch** を `claude/flood-road-alert-app-9lozqq` / `/ (root)` にして **Save**
+   （既定ブランチとは別なので、選び間違えるとプロトタイプが出ません）
 4. 数分待つと、次のURLで開けます
 
 ```
