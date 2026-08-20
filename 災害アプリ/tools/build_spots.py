@@ -16,6 +16,9 @@
     # ジオコーディングを行わず、抽出結果だけ確認する
     python3 tools/build_spots.py --pdf 一覧表.pdf --no-geocode --out /tmp/dry.json
 
+    # どのページが一覧表かを調べる（地図と一覧表が混在していることがある）
+    python3 tools/build_spots.py --pdf 資料.pdf --inspect
+
     # 表として抽出できない場合、何が読めているかを見る
     python3 tools/build_spots.py --pdf 一覧表.pdf --dump-text | head -50
 """
@@ -85,7 +88,66 @@ def map_headers(header_row: list[str]) -> dict[int, str]:
     return out
 
 
-def extract_rows(pdf_path: Path, dump_text: bool = False) -> list[dict]:
+def inspect_pdf(pdf_path: Path) -> None:
+    """PDFの中身を1ページずつ要約する。
+
+    冠水注意箇所の資料は「地図（番号だけ）」と「一覧表（番号・路線名・所在地）」が
+    別ファイルだったり、同じPDFの別ページに入っていたりする。
+    どのページが一覧表なのかを機械的に見つけるための下調べ用。
+    """
+    import logging
+
+    import pdfplumber
+
+    logging.getLogger("pdfminer").setLevel(logging.ERROR)
+
+    LIST_HINTS = ("所在地", "路線", "箇所名", "住所", "市町村", "アンダーパス名")
+
+    print(f"ファイル: {pdf_path.name}  ({pdf_path.stat().st_size/1024:.0f} KB)")
+    candidates = []
+    with pdfplumber.open(str(pdf_path)) as pdf:
+        print(f"ページ数: {len(pdf.pages)}\n")
+        for pno, page in enumerate(pdf.pages, 1):
+            text = page.extract_text() or ""
+            tables = page.extract_tables() or []
+            hits = [h for h in LIST_HINTS if h in text]
+            headers = {}
+            for t in tables:
+                for row in t[:3]:
+                    m = map_headers([c or "" for c in row])
+                    if len(m) > len(headers):
+                        headers = m
+
+            kind = "不明"
+            if headers and len(headers) >= 3:
+                kind = "★一覧表らしい"
+                candidates.append(pno)
+            elif hits:
+                kind = "一覧表かもしれない（表としては読めていない）"
+                candidates.append(pno)
+            elif len(re.findall(r"\b\d{1,3}\b", text)) > 30 and len(text) < 800:
+                kind = "地図（番号だけ）らしい"
+
+            sample = re.sub(r"\s+", " ", text)[:100]
+            print(f"--- {pno}ページ: {kind}")
+            print(f"    文字数 {len(text)} / 表 {len(tables)} 個"
+                  + (f" / 見つかった列 {sorted(set(headers.values()))}" if headers else "")
+                  + (f" / 手がかり {hits}" if hits else ""))
+            print(f"    冒頭: {sample or '(テキストなし)'}")
+
+    print()
+    if candidates:
+        print(f"▶ 一覧表がありそうなページ: {candidates}")
+        print(f"  次を実行して中身を確認してください:")
+        print(f"      python3 tools/build_spots.py --pdf {pdf_path.name} "
+              f"--dump-text --page {candidates[0]}")
+    else:
+        print("▶ このPDFに一覧表は見当たりません。")
+        print("  「道路冠水注意箇所一覧表」という別のPDFを探して、そちらを使ってください。")
+        print("  掲載元: https://www.ktr.mlit.go.jp/chiba/chiba_index030.html")
+
+
+def extract_rows(pdf_path: Path, dump_text: bool = False, only_page: int = 0) -> list[dict]:
     import logging
 
     import pdfplumber
@@ -96,6 +158,8 @@ def extract_rows(pdf_path: Path, dump_text: bool = False) -> list[dict]:
     rows: list[dict] = []
     with pdfplumber.open(str(pdf_path)) as pdf:
         for pno, page in enumerate(pdf.pages, 1):
+            if only_page and pno != only_page:
+                continue
             if dump_text:
                 print(f"--- page {pno} ---")
                 print(page.extract_text() or "(テキストなし)")
@@ -125,21 +189,32 @@ def extract_rows(pdf_path: Path, dump_text: bool = False) -> list[dict]:
 
     if not rows:
         # 表として取れない場合のフォールバック: 行テキストから拾う
-        rows = extract_rows_from_text(pdf_path)
+        rows = extract_rows_from_text(pdf_path, only_page=only_page)
     return rows
 
 
 LINE_RE = re.compile(
     r"^\s*(?P<no>\d{1,4})[\s.、]+(?P<rest>.+?)\s*$")
 
+# ひらがな・カタカナ・漢字のいずれかを含むか（地図の番号の羅列を弾くために使う）
+CJK_RE = re.compile(r"[\u3040-\u30ff\u4e00-\u9fff]")
 
-def extract_rows_from_text(pdf_path: Path) -> list[dict]:
-    """罫線のないPDF向けのフォールバック。「番号 + 本文」の行を拾う。"""
+
+def extract_rows_from_text(pdf_path: Path, only_page: int = 0) -> list[dict]:
+    """罫線のないPDF向けのフォールバック。「番号 + 本文」の行を拾う。
+
+    冠水注意箇所の「地図」版PDFは番号だけが散らばっており、
+    「87 61 35 9 70 …」のような行が大量にある。これを地点として拾ってしまうと
+    実在しない危険箇所を作ってしまうため、路線名や地名にあたる部分に
+    日本語（かな・漢字）が含まれる行だけを採用する。
+    """
     import pdfplumber
 
     rows = []
     with pdfplumber.open(str(pdf_path)) as pdf:
         for pno, page in enumerate(pdf.pages, 1):
+            if only_page and pno != only_page:
+                continue
             for line in (page.extract_text() or "").splitlines():
                 m = LINE_RE.match(line)
                 if not m:
@@ -148,6 +223,8 @@ def extract_rows_from_text(pdf_path: Path) -> list[dict]:
                 parts = re.split(r"[\s　]{1,}", rest.strip())
                 if len(parts) < 2:
                     continue
+                if not any(CJK_RE.search(x) for x in parts[:3]):
+                    continue        # 数字の羅列（地図の番号）は地点ではない
                 rows.append({
                     "_page": pno,
                     "no": m.group("no"),
@@ -214,6 +291,10 @@ def main() -> int:
     ap.add_argument("--sleep", type=float, default=1.0, help="ジオコーディングの間隔[秒]")
     ap.add_argument("--limit", type=int, default=0, help="先頭N件だけ処理（動作確認用）")
     ap.add_argument("--dump-text", action="store_true", help="PDFのテキストを表示して終了")
+    ap.add_argument("--inspect", action="store_true",
+                    help="どのページが一覧表かを1ページずつ調べて表示する")
+    ap.add_argument("--page", type=int, default=0,
+                    help="指定ページだけを対象にする（0=全ページ）")
     ap.add_argument("--source", default="", help="出典表記（例: 国交省千葉国道事務所 2026-06-30版）")
     args = ap.parse_args()
 
@@ -228,7 +309,11 @@ def main() -> int:
         print(f"PDFが見つかりません: {pdf_path}", file=sys.stderr)
         return 1
 
-    rows = extract_rows(pdf_path, dump_text=args.dump_text)
+    if args.inspect:
+        inspect_pdf(pdf_path)
+        return 0
+
+    rows = extract_rows(pdf_path, dump_text=args.dump_text, only_page=args.page)
     if args.dump_text:
         return 0
     if args.limit:

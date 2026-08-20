@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import build_spots as bs  # noqa: E402
 
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "sample_kansui_list.pdf"
+FIXTURE_MAP = Path(__file__).resolve().parent / "fixtures" / "sample_map_then_list.pdf"
 
 ok, ng = [], []
 def check(name, cond, extra=""):
@@ -67,6 +68,39 @@ def test_extract():
         check("所在地が読めている", all(r.get("address") for r in rows))
 
 
+def test_map_and_list_pdf():
+    """1ページ目が地図（番号だけ）、2ページ目が一覧表、という実物に近い構成。
+
+    実際の国交省の資料がこの形（地図PDFに住所が入っていない）だったため、
+    どのページが一覧表かを見つけられること、そのページだけを読めることを確認する。
+    """
+    if not FIXTURE_MAP.exists():
+        check("地図＋一覧表のフィクスチャがある", False,
+              "node tools/fixtures/make_fixture_map_pdf.js で生成してください")
+        return
+
+    import contextlib
+    import io
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        bs.inspect_pdf(FIXTURE_MAP)
+    out = buf.getvalue()
+    check("--inspect が一覧表のページ(2)を指す", "一覧表がありそうなページ: [2]" in out,
+          [ln for ln in out.splitlines() if "ありそうな" in ln])
+    check("--inspect が1ページ目を地図と判定する", "1ページ: 地図（番号だけ）らしい" in out,
+          [ln for ln in out.splitlines() if ln.startswith("--- 1ページ")])
+
+    rows_all = bs.extract_rows(FIXTURE_MAP)
+    check("全ページ走査でも一覧表の3行だけが取れる（地図から誤検出しない）",
+          len(rows_all) == 3, f"実際={len(rows_all)}行")
+
+    rows_p2 = bs.extract_rows(FIXTURE_MAP, only_page=2)
+    check("--page 2 でそのページだけ読める", len(rows_p2) == 3, f"実際={len(rows_p2)}行")
+
+    rows_p1 = bs.extract_rows(FIXTURE_MAP, only_page=1)
+    check("--page 1（地図）からは行が取れない", len(rows_p1) == 0, f"実際={len(rows_p1)}行")
+
+
 def test_geocode_with_fake_session():
     """ネットワークを使わずジオコーディング処理の形を確認する。"""
     class FakeResp:
@@ -98,6 +132,7 @@ def main():
     test_norm_and_headers()
     test_confidence()
     test_extract()
+    test_map_and_list_pdf()
     test_geocode_with_fake_session()
     print("===== build_spots.py 検証 =====")
     for s in ok:
