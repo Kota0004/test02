@@ -253,7 +253,10 @@ def extract_rows(pdf_path: Path, dump_text: bool = False, only_page: int = 0) ->
                     if len(m) > len(best_map):
                         best_i, best_map = i, m
 
-                if best_map:
+                # 地図ページにも凡例などの小さな表があり、たまたま1列だけ
+                # 見出しに当たることがある。そこから地点を拾うと実在しない箇所が
+                # 混ざるので、一覧表とみなすには3列以上の対応が必要とする。
+                if len(best_map) >= MIN_HEADER_COLS:
                     carried_map, carried_ncols = best_map, len(table[best_i])
                 elif carried_map and len(table[0]) == carried_ncols:
                     # 「(2/2)」のような続きのページには見出しが無い。
@@ -280,6 +283,9 @@ def extract_rows(pdf_path: Path, dump_text: bool = False, only_page: int = 0) ->
         rows = extract_rows_from_text(pdf_path, only_page=only_page)
     return rows
 
+
+# 一覧表と判断するのに必要な、見出しの対応列数
+MIN_HEADER_COLS = 3
 
 LINE_RE = re.compile(
     r"^\s*(?P<no>\d{1,4})[\s.、]+(?P<rest>.+?)\s*$")
@@ -322,6 +328,40 @@ def extract_rows_from_text(pdf_path: Path, only_page: int = 0) -> list[dict]:
                     "kind_raw": norm(" ".join(parts[3:])) if len(parts) > 3 else "",
                 })
     return rows
+
+
+def report_anomalies(rows: list[dict]) -> None:
+    """抽出結果のおかしなところを警告する。件数が想定と違うときの手がかりになる。"""
+    import collections
+
+    nos = [r.get("no") for r in rows if r.get("no")]
+    ints = []
+    for n in nos:
+        try:
+            ints.append(int(n))
+        except ValueError:
+            pass
+
+    problems = []
+    dup = [n for n, c in collections.Counter(ints).items() if c > 1]
+    if dup:
+        problems.append(f"番号の重複: {sorted(dup)}")
+    if ints:
+        expected = set(range(min(ints), max(ints) + 1))
+        missing = sorted(expected - set(ints))
+        if missing:
+            problems.append(f"番号の欠番: {missing}")
+        problems.append(f"番号の範囲: {min(ints)}〜{max(ints)}（{len(set(ints))} 種類）")
+
+    no_addr = [r.get("no") or "?" for r in rows
+               if not norm(r.get("address", "")) and not norm(r.get("locality", ""))]
+    if no_addr:
+        problems.append(f"市町村名も地先名も無い行: {no_addr}（一覧表以外から拾った可能性）")
+
+    if problems:
+        print("  点検:")
+        for x in problems:
+            print(f"    - {x}")
 
 
 def geocode(query: str, session, sleep_s: float, cache: dict) -> dict | None:
@@ -413,6 +453,7 @@ def main() -> int:
     if args.limit:
         rows = rows[:args.limit]
     print(f"抽出した行数: {len(rows)}")
+    report_anomalies(rows)
     if not rows:
         print("表を抽出できませんでした。--dump-text で中身を確認し、"
               "HEADER_MAP / LINE_RE を実際のPDFに合わせて調整してください。", file=sys.stderr)

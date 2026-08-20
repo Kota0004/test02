@@ -36,6 +36,12 @@ const html = `<!doctype html><html lang="ja"><meta charset="utf-8">
 <div class="page">
   <h1>■千葉県内におけるアンダーパス部等の道路冠水注意箇所マップ（テスト用ダミー）</h1>
   ${NUMS.map(n => `<div class="num" style="left:${(n*37)%160+10}mm;top:${(n*23)%200+20}mm">${n}</div>`).join('')}
+  <!-- 実物の地図ページにも凡例の小さな表がある。1列だけ見出しに当たるため、
+       ここから地点を拾ってしまわないかの検証に使う。 -->
+  <table style="width:60mm;position:absolute;bottom:10mm;left:10mm">
+    <tr><th>箇所</th><th>色</th></tr>
+    <tr><td>アンダーパス</td><td>赤</td></tr>
+  </table>
 </div>
 <div class="page">
   <h1>■サンプル県内におけるアンダーパス部等の道路冠水注意箇所（１／２）（テスト用ダミー）</h1>

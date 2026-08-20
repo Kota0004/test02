@@ -99,6 +99,8 @@ def test_map_and_list_pdf():
 
     rows_p1 = bs.extract_rows(FIXTURE_MAP, only_page=1)
     check("--page 1（地図）からは行が取れない", len(rows_p1) == 0, f"実際={len(rows_p1)}行")
+    check("地図ページの凡例表（見出し1列だけ）を一覧表と誤認しない",
+          len(rows_all) == 5, f"実際={len(rows_all)}行（凡例から拾うと6行になる）")
 
     if len(rows_all) == 5:
         addrs = [bs.build_address(r, "サンプル県") for r in rows_all]
@@ -118,6 +120,36 @@ def test_map_and_list_pdf():
         check("全角数字と改行が正規化される（１丁目→1丁目）",
               addrs[0] == "サンプル県サンプル市サンプル町1丁目11番", addrs[0])
         check("末尾の「地先」を住所から落とす", not addrs[0].endswith("地先"), addrs[0])
+
+
+def test_min_header_cols():
+    """見出しが2列以下しか当たらない表は一覧表とみなさない。"""
+    check("1列だけの見出しは一覧表ではない",
+          len(bs.map_headers(["箇所", "色"])) < bs.MIN_HEADER_COLS,
+          str(bs.map_headers(["箇所", "色"])))
+    check("実物の見出しは一覧表と判定される",
+          len(bs.map_headers(["No.", "市町村名", "道路種別", "問合せ先", "", "",
+                              "路線名", "地先名又は通称名"])) >= bs.MIN_HEADER_COLS)
+
+
+def test_anomaly_report():
+    """点検の出力（欠番・重複・住所なし）"""
+    import contextlib
+    import io
+    rows = [
+        {"no": "1", "address": "習志野市", "locality": "袖ケ浦1丁目"},
+        {"no": "3", "address": "市原市", "locality": "五井"},
+        {"no": "3", "address": "市原市", "locality": "五井"},
+        {"no": "9", "address": "", "locality": ""},
+    ]
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        bs.report_anomalies(rows)
+    out = buf.getvalue()
+    check("番号の重複を報告する", "番号の重複: [3]" in out, out.strip()[:60])
+    check("番号の欠番を報告する", "欠番" in out and "2" in out, out.strip()[:80])
+    check("市町村名も地先名も無い行を報告する", "市町村名も地先名も無い行" in out)
+
 
 
 def test_chisaki_and_paren():
@@ -190,6 +222,8 @@ def main():
     test_map_and_list_pdf()
     test_header_mapping_real()
     test_chisaki_and_paren()
+    test_min_header_cols()
+    test_anomaly_report()
     test_geocode_with_fake_session()
     print("===== build_spots.py 検証 =====")
     for s in ok:
