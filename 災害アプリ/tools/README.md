@@ -132,6 +132,7 @@ python3 tools/probe_endpoints.py --url https://pub.os-alert.info/chiba/devmap --
 | `build_spots.py` | ② 一覧PDF → 座標付き spots JSON + レビュー用CSV |
 | `enrich_dem.py` | ② 標高タイルから相対標高 dz を付与 |
 | `osm_snap.py` | ② OSMのトンネル情報へ座標を寄せる（住所検索では構造物を指せないため） |
+| `validate_spots.py` | ② データの点検（座標・重複・レビュー状況・閾値と危険度の分布） |
 | `fetch_amedas.py` | ③ アメダス10分値 → 各地点の雨量と危険度 |
 | `probe_endpoints.py` | ④ 公開ページのデータ取得口を調査 |
 | `review_spots.py` / `.html` | ② 座標を地図上で確認・修正するレビュー画面（ローカルサーバ） |
