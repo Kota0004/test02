@@ -83,6 +83,53 @@ def haversine_m(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
     return 2 * r * math.asin(math.sqrt(a))
 
 
+def local_xy(lon: float, lat: float, lat0: float) -> tuple[float, float]:
+    """緯度経度 → 局所的な平面座標[m]。数百m〜数kmの範囲なら十分な精度。"""
+    return (lon * 111_320.0 * math.cos(math.radians(lat0)), lat * 110_540.0)
+
+
+def xy_to_lonlat(x: float, y: float, lat0: float) -> tuple[float, float]:
+    return (x / (111_320.0 * math.cos(math.radians(lat0))), y / 110_540.0)
+
+
+def point_segment_distance(plon: float, plat: float,
+                           alon: float, alat: float,
+                           blon: float, blat: float) -> tuple[float, float, float]:
+    """点Pと線分ABの距離[m]、および線分上の最近接点(lon, lat)を返す。"""
+    lat0 = plat
+    px, py = local_xy(plon, plat, lat0)
+    ax, ay = local_xy(alon, alat, lat0)
+    bx, by = local_xy(blon, blat, lat0)
+
+    dx, dy = bx - ax, by - ay
+    if dx == 0 and dy == 0:
+        return haversine_m(plon, plat, alon, alat), alon, alat
+
+    t = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)
+    t = max(0.0, min(1.0, t))          # 線分の外には出さない
+    cx, cy = ax + t * dx, ay + t * dy
+    clon, clat = xy_to_lonlat(cx, cy, lat0)
+    return haversine_m(plon, plat, clon, clat), clon, clat
+
+
+def nearest_on_ways(lon: float, lat: float, ways: list[dict],
+                    max_m: float = 300.0) -> dict | None:
+    """複数の線（[{"geometry": [{"lon","lat"}...], ...}]）のうち最も近い点を返す。
+
+    戻り値: {"distance_m", "lon", "lat", "way"} / 範囲内に無ければ None
+    """
+    best = None
+    for way in ways:
+        pts = way.get("geometry") or []
+        for i in range(len(pts) - 1):
+            a, b = pts[i], pts[i + 1]
+            d, clon, clat = point_segment_distance(lon, lat, a["lon"], a["lat"],
+                                                   b["lon"], b["lat"])
+            if d <= max_m and (best is None or d < best["distance_m"]):
+                best = {"distance_m": d, "lon": clon, "lat": clat, "way": way}
+    return best
+
+
 def dms_to_deg(pair: Iterable[float]) -> float:
     """気象庁アメダスの [度, 分] 形式を10進度へ。"""
     d, m = list(pair)[:2]

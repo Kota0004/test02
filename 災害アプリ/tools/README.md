@@ -53,10 +53,15 @@ python3 tools/build_spots.py --pdf 一覧表.pdf --area chiba \
 # 5. 標高タイルから相対標高 dz を付ける（この時点では目安。レビュー後にやり直す）
 python3 tools/enrich_dem.py --in data/spots_chiba.json --out data/spots_chiba.json
 
-# 6. ★人手レビュー：地図上で座標を確認・修正する（その場でJSONに保存される）
+# 6. OSMのトンネル情報へ座標を自動で寄せる（レビューの出発点を良くする）
+python3 tools/osm_snap.py --spots data/spots_chiba.json --fetch
+python3 tools/osm_snap.py --spots data/spots_chiba.json --dry-run   # 確認
+python3 tools/osm_snap.py --spots data/spots_chiba.json --apply     # 反映
+
+# 7. ★人手レビュー：地図上で座標を確認・修正する（その場でJSONに保存される）
 python3 tools/review_spots.py --spots data/spots_chiba.json
 
-# 7. 座標が正しくなったので dz を計算し直す
+# 8. 座標が正しくなったので dz を計算し直す
 python3 tools/enrich_dem.py --in data/spots_chiba.json --out data/spots_chiba.json
 
 # iPad / GitHub Codespaces から使う場合
@@ -110,6 +115,7 @@ python3 tools/probe_endpoints.py --url https://pub.os-alert.info/chiba/devmap --
 | `test_enrich_dem.py` | 標高タイルのRGBデコード（往復・無効値）、相対標高 dz の算出、dz が閾値に効くこと |
 | `test_fetch_amedas.py` | アメダスJSONの解釈（品質フラグ・[度,分]変換）、IDW内挿、危険度出力 |
 | `test_review_spots.py` | レビュー画面のサーバ側（保存・バックアップ・進捗集計・異常系・再開） |
+| `test_osm_snap.py` | 点と線分の距離、寄せ先の優先順位、上限、確認済みの保護、出典の記録 |
 | `verify_prototype.js` | ブラウザでの実動作13項目（雨量フィルタ・現在地アラート・クールダウン・ラベル・障害時の劣化動作） |
 | `verify_ipad.js` | iPad 横/縦でのはみ出し・タップ領域・主要操作 14項目 |
 
@@ -121,6 +127,7 @@ python3 tools/probe_endpoints.py --url https://pub.os-alert.info/chiba/devmap --
 | `geo.py` | タイル座標変換、標高タイルのデコード、IDW内挿 |
 | `build_spots.py` | ② 一覧PDF → 座標付き spots JSON + レビュー用CSV |
 | `enrich_dem.py` | ② 標高タイルから相対標高 dz を付与 |
+| `osm_snap.py` | ② OSMのトンネル情報へ座標を寄せる（住所検索では構造物を指せないため） |
 | `fetch_amedas.py` | ③ アメダス10分値 → 各地点の雨量と危険度 |
 | `probe_endpoints.py` | ④ 公開ページのデータ取得口を調査 |
 | `review_spots.py` / `.html` | ② 座標を地図上で確認・修正するレビュー画面（ローカルサーバ） |
