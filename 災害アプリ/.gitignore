@@ -1,7 +1,15 @@
-# 取込ツールの出力（実データ）。人手レビュー前のものをうっかり共有しないため。
+# 入手した資料そのもの。再配布にあたるため置かない（data/README.md 参照）。
+# この .gitignore は 災害アプリ/ 配下にだけ効くので、授業課題のPDFには影響しない。
+*.pdf
+
+# 取込ツールの出力。既定では共有しない（人手レビュー前のものを誤って公開しないため）。
+# レビューが済んで共有したくなったら git add -f で明示的に追加する。
 data/*.json
 data/*.csv
+data/*.bak
+data/*.pre-snap.bak
 !data/.gitkeep
+!data/README.md
 
 # 依存
 node_modules/
