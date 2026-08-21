@@ -71,6 +71,67 @@ def test_priority():
           r2 and r2["osm_name"] == "近い道路トンネル", str(r2 and r2["osm_name"]))
 
 
+def test_name_tokens():
+    """路線名・通称から、照合に使える手がかりだけを取り出す。"""
+    cases = [
+        # (路線名, 通称, 道路種別, 期待する番号, 期待する名称の一部)
+        ("国道356号", "国道356号バイパス", "国道", {"356"}, None),
+        ("297号", "五井アンダーパス", "国道（県管理）", {"297"}, "五井"),
+        ("市道00-002号線", "袖ケ浦1丁目11番地先", "市道", set(), None),
+        ("新港穴川線", "新港穴川線地下道", "市道", set(), "新港穴川"),
+    ]
+    for road, name, rt, want_refs, want_name in cases:
+        refs, names = osm.name_tokens(road, name, rt)
+        check(f"番号の抽出 {road}", refs == want_refs, f"実際={sorted(refs)} 期待={sorted(want_refs)}")
+        if want_name:
+            check(f"名称の抽出 {road}", want_name in names, f"実際={sorted(names)}")
+        else:
+            check(f"住所や整理番号を名称にしない {road}",
+                  not any(("丁目" in n or "番地先" in n) for n in names), f"実際={sorted(names)}")
+
+    check("一般語（アンダーパス）だけでは一致させない",
+          osm.name_bonus(*osm.name_tokens("", "五井アンダーパス"),
+                         {"name": "○○アンダーパス"})[0] == 0)
+    check("市道の整理番号を国道の ref に一致させない",
+          osm.name_bonus(*osm.name_tokens("市道00-002号線", "袖ケ浦1丁目11番地先", "市道"),
+                         {"ref": "2", "highway": "trunk"})[0] == 0)
+    refs, names = osm.name_tokens("国道356号", "国道356号バイパス", "国道")
+    check("複数の ref を持つ線でも一致する",
+          osm.name_bonus(refs, names, {"ref": "126;356"})[0] == osm.REF_BONUS_M)
+
+
+def test_name_match_wins():
+    """名前が一致する線は、多少遠くても優先される。"""
+    spot = {"lon": 140.1000, "lat": 35.6000, "road": "297号",
+            "road_type": "国道（県管理）", "name": "五井アンダーパス"}
+    near_other = line(140.0990, 35.6005, 140.1010, 35.6005,
+                      highway="residential", tunnel="yes", name="無関係なトンネル")   # 約55m
+    far_match = line(140.0990, 35.6014, 140.1010, 35.6014,
+                     highway="trunk", tunnel="yes", ref="297", name="国道297号")      # 約155m
+    r = osm.snap_one(spot, [near_other, far_match], max_move=300)
+    check("路線番号が一致する線を選ぶ（多少遠くても）",
+          r and r["osm_name"] == "国道297号", str(r and r["osm_name"]))
+    check("一致の理由が記録される", r and "297" in r["name_match"], str(r and r["name_match"]))
+    check("確からしさが「高」になる", r and r["snap_confidence"] == "高", str(r and r["snap_confidence"]))
+
+    # 名前が一致しなければ、近い方が選ばれる
+    r2 = osm.snap_one({"lon": 140.1000, "lat": 35.6000, "road": "", "name": ""},
+                      [near_other, far_match], max_move=300)
+    check("名前の手がかりが無ければ近い方を選ぶ",
+          r2 and r2["osm_name"] == "無関係なトンネル", str(r2 and r2["osm_name"]))
+
+
+def test_snap_confidence():
+    check("名前一致は 高", osm.snap_confidence(
+        {"name_match": "路線番号が一致（297）", "distance_m": 250})[0] == "高")
+    check("名前不一致でも近ければ 中", osm.snap_confidence(
+        {"name_match": "", "distance_m": 80})[0] == "中")
+    check("名前不一致で遠ければ 低", osm.snap_confidence(
+        {"name_match": "", "distance_m": 260})[0] == "低")
+    lv, why = osm.snap_confidence({"name_match": "", "distance_m": 260})
+    check("低のときは理由が出る", "別の構造物" in why, why)
+
+
 def test_max_move():
     spot = {"lon": 140.1000, "lat": 35.6000}
     ways = [line(140.0990, 35.6050, 140.1010, 35.6050, highway="residential", tunnel="yes")]
@@ -175,6 +236,9 @@ def main():
     test_categorize()
     test_snap_nearest()
     test_priority()
+    test_name_tokens()
+    test_name_match_wins()
+    test_snap_confidence()
     test_max_move()
     test_bbox()
     test_http_headers_ascii()

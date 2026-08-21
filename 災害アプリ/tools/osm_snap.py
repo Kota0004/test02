@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import time
 from datetime import date
@@ -123,6 +124,71 @@ def categorize(tags: dict) -> tuple[int, str]:
 # すぐ近くに鉄道橋（ガード下）があればそちらを選べるようにする。
 PRIO_PENALTY_M = 60.0
 
+# 路線名・通称が一致したときの「割引」[m]。名前が合う線は多少遠くても本命に近い。
+REF_BONUS_M = 150.0     # 路線番号の一致（国道356号 ↔ ref=356）
+NAME_BONUS_M = 120.0    # 名称の一致（新港穴川線 ↔ name に「新港穴川」）
+
+REF_RE = re.compile(r"(?:国道|県道|市道|町道|村道|主要地方道)?\s*(\d{1,4})\s*号")
+# 路線名から特徴のある部分を取り出す（「新港穴川線」→「新港穴川」）
+NAME_TAIL_RE = re.compile(r"(線|号線|号|バイパス|通り|街道)$")
+
+
+# 住所の表記。路線名ではないので、名前の手がかりにしない
+ADDRESSY_RE = re.compile(r"(丁目|番地|地先|大字|小字|字[ぁ-ん一-龥])")
+DIGITS_ONLY_RE = re.compile(r"^[\d\-‐−ー]+$")
+
+
+def name_tokens(road: str = "", name: str = "", road_type: str = "") -> tuple[set[str], set[str]]:
+    """(路線番号の集合, 名称の手がかりの集合) を返す。
+
+    OSM が `ref` を持つのは国道・県道（主要地方道）が中心で、市道・町道の
+    整理番号（「市道00-002号線」の 002 など）は入っていない。
+    これを番号として扱うと、無関係な線に一致してしまうので、
+    **国道・県道と分かる場合だけ**番号を取り出す。
+    """
+    refs, names = set(), set()
+    ctx = norm_text(road_type) + norm_text(road)
+    is_numbered_route = any(k in ctx for k in ("国道", "県道", "主要地方道"))
+
+    for t in (road, name):
+        t = norm_text(t)
+        if not t:
+            continue
+        if is_numbered_route or re.match(r"^\d{1,4}\s*号", t):
+            refs.update(REF_RE.findall(t))
+        if ADDRESSY_RE.search(t):
+            continue                       # 「袖ケ浦1丁目11番地先」は路線名ではない
+        core = NAME_TAIL_RE.sub("", t)
+        # 「アンダーパス」「地下道」などの一般語は、どの地点にもあるので手がかりにならない
+        for generic in ("アンダーパス", "アンダー", "地下道", "ガード下", "ガード",
+                        "立体交差", "立体", "橋詰", "国道", "県道", "市道", "町道", "村道"):
+            core = core.replace(generic, "")
+        core = core.strip()
+        if len(core) >= 2 and not DIGITS_ONLY_RE.match(core):
+            names.add(core)
+    return refs, names
+
+
+def norm_text(v) -> str:
+    import unicodedata
+    return unicodedata.normalize("NFKC", str(v or "")).strip()
+
+
+def name_bonus(spot_refs: set[str], spot_names: set[str], tags: dict) -> tuple[float, str]:
+    """OSMの線の名前が地点の路線名と一致すれば割引する。"""
+    way_ref = norm_text(tags.get("ref"))
+    way_name = norm_text(tags.get("name"))
+
+    if spot_refs and way_ref:
+        parts = {p.strip() for p in re.split(r"[;,/]", way_ref)}
+        if spot_refs & parts:
+            return REF_BONUS_M, f"路線番号が一致（{way_ref}）"
+    if spot_names and way_name:
+        for token in spot_names:
+            if token in way_name or way_name in token:
+                return NAME_BONUS_M, f"名称が一致（{way_name}）"
+    return 0.0, ""
+
 
 def snap_one(spot: dict, ways: list[dict], max_move: float) -> dict | None:
     """最も「もっともらしい」線へ寄せる。
@@ -131,15 +197,19 @@ def snap_one(spot: dict, ways: list[dict], max_move: float) -> dict | None:
     そうしないと、たまたま近くを通る鉄道橋が、本命の道路トンネルより
     優先されてしまう（逆に、真上に鉄道橋があるガード下は拾えなくなる）。
     """
+    spot_refs, spot_names = name_tokens(spot.get("road", ""), spot.get("name", ""),
+                                        spot.get("road_type", ""))
+
     best = None
     for w in ways:
-        prio, label = categorize(w.get("tags") or {})
+        tags = w.get("tags") or {}
+        prio, label = categorize(tags)
         hit = geo.nearest_on_ways(spot["lon"], spot["lat"], [w], max_m=max_move)
         if not hit:
             continue
-        effective = hit["distance_m"] + prio * PRIO_PENALTY_M
+        bonus, bonus_reason = name_bonus(spot_refs, spot_names, tags)
+        effective = hit["distance_m"] + prio * PRIO_PENALTY_M - bonus
         if best is None or effective < best["effective"]:
-            tags = w.get("tags") or {}
             best = {
                 "effective": effective,
                 "lon": round(hit["lon"], 6),
@@ -148,10 +218,22 @@ def snap_one(spot: dict, ways: list[dict], max_move: float) -> dict | None:
                 "matched": label,
                 "osm_id": w.get("id"),
                 "osm_name": tags.get("name") or tags.get("ref") or "",
+                "name_match": bonus_reason,
             }
     if best:
         best.pop("effective")
+        best["snap_confidence"], best["why"] = snap_confidence(best)
     return best
+
+
+def snap_confidence(res: dict) -> tuple[str, str]:
+    """寄せた結果の確からしさ。レビューでどこを重点的に見るかの目安にする。"""
+    if res["name_match"]:
+        return "高", res["name_match"]
+    if res["distance_m"] <= 120:
+        return "中", f"名前は一致しないが近い（{res['distance_m']:.0f}m）"
+    return "低", (f"名前が一致せず {res['distance_m']:.0f}m 離れている。"
+                  "別の構造物を掴んでいる可能性があります")
 
 
 def main() -> int:
@@ -207,11 +289,14 @@ def main() -> int:
                 "matched": res["matched"],
                 "osm_id": res["osm_id"],
                 "osm_name": res["osm_name"],
+                "confidence": res["snap_confidence"],
+                "why": res["why"],
                 "applied_at": date.today().isoformat(),
                 "source": "© OpenStreetMap contributors (ODbL)",
             }
             s.setdefault("evidence", {})["note"] = (
-                f"OSMの{res['matched']}へ {res['distance_m']:.0f}m 寄せた位置です。目視で確認してください")
+                f"OSMの{res['matched']}へ {res['distance_m']:.0f}m 寄せた位置"
+                f"（確からしさ {res['snap_confidence']}）。目視で確認してください")
 
     print(f"\n寄せられた地点: {len(moved)} 件 / 近くに見つからない: {len(not_found)} 件"
           + (f" / 確認済みのため対象外: {skipped_reviewed} 件" if skipped_reviewed else ""))
@@ -224,10 +309,30 @@ def main() -> int:
             by_cat[r["matched"]] = by_cat.get(r["matched"], 0) + 1
         for k, v in sorted(by_cat.items(), key=lambda kv: -kv[1]):
             print(f"  {k}: {v} 件")
-        print("\n  例（移動距離の大きい順に5件）:")
-        for s, r in sorted(moved, key=lambda x: -x[1]["distance_m"])[:5]:
-            print(f"    {s['id']} {s.get('name','')[:20]:<20} {r['distance_m']:>5.0f}m "
-                  f"→ {r['matched']} {r['osm_name']}")
+
+        by_conf: dict[str, int] = {}
+        for _, r in moved:
+            by_conf[r["snap_confidence"]] = by_conf.get(r["snap_confidence"], 0) + 1
+        print("\n  寄せた結果の確からしさ:")
+        for k in ("高", "中", "低"):
+            if by_conf.get(k):
+                print(f"    {k}: {by_conf[k]} 件"
+                      + {"高": "（路線名が一致。ほぼ確実）",
+                         "中": "（近いが名前は不明。要確認）",
+                         "低": "（遠く名前も不一致。重点的に確認）"}[k])
+
+        good = [(s, r) for s, r in moved if r["name_match"]]
+        if good:
+            print("\n  路線名が一致した例:")
+            for s, r in good[:5]:
+                print(f"    {s['id']} {s.get('name','')[:18]:<18} {r['distance_m']:>4.0f}m "
+                      f"→ {r['osm_name']}  {r['why']}")
+        weak = [(s, r) for s, r in moved if r["snap_confidence"] == "低"]
+        if weak:
+            print("\n  重点確認（確からしさ 低）の例:")
+            for s, r in sorted(weak, key=lambda x: -x[1]["distance_m"])[:5]:
+                print(f"    {s['id']} {s.get('name','')[:18]:<18} {r['distance_m']:>4.0f}m "
+                      f"→ {r['matched']} {r['osm_name']}")
     if not_found:
         print(f"  近くにトンネルが見つからない: {not_found[:10]}"
               + (" ほか" if len(not_found) > 10 else ""))

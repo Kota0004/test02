@@ -310,12 +310,21 @@
 
     // OSMのトンネルへ自動で寄せた地点は、その根拠を出す（確定ではないので確認が要る）
     const snap = (s.params || {}).snap;
-    document.getElementById('snapInfo').innerHTML = !snap ? ''
-      : `📍 OSMの<b>${esc(snap.matched)}</b>へ ${Math.round(snap.moved_m)}m 寄せた位置`
+    const snapEl = document.getElementById('snapInfo');
+    if (!snap) { snapEl.innerHTML = ''; }
+    else {
+      // 確からしさで色を変える。「低」は重点的に見てほしい
+      const conf = snap.confidence || '中';
+      const col = conf === '高' ? '#22c55e' : conf === '低' ? '#ef4444' : '#7dd3fc';
+      snapEl.innerHTML =
+        `📍 OSMの<b>${esc(snap.matched)}</b>へ ${Math.round(snap.moved_m)}m 寄せた位置`
         + (snap.osm_name ? `（${esc(snap.osm_name)}）` : '')
+        + ` <b style="color:${col}">確からしさ ${esc(conf)}</b>`
+        + (snap.why ? ` — ${esc(snap.why)}` : '')
         + (snap.osm_id ? ` <a href="https://www.openstreetmap.org/way/${encodeURIComponent(snap.osm_id)}"
-             target="_blank" rel="noopener" style="color:var(--accent)">OSMで見る ↗</a>` : '')
-        + ' — <b>合っているか確認してください</b>';
+             target="_blank" rel="noopener" style="color:var(--accent)">OSMで見る ↗</a>` : '');
+      snapEl.style.color = conf === '低' ? '#ef4444' : '#7dd3fc';
+    }
 
     const hasXY = s.lon != null && s.lat != null;
     const pos = hasXY ? [s.lon, s.lat] : CENTER_FALLBACK;
