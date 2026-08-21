@@ -125,7 +125,12 @@ def test_snap_confidence():
     check("名前一致は 高", osm.snap_confidence(
         {"name_match": "路線番号が一致（297）", "distance_m": 250})[0] == "高")
     check("名前不一致でも近ければ 中", osm.snap_confidence(
-        {"name_match": "", "distance_m": 80})[0] == "中")
+        {"name_match": "", "distance_m": 60})[0] == "中")
+    check("名前不一致で80m超は 低", osm.snap_confidence(
+        {"name_match": "", "distance_m": 100})[0] == "低")
+    check("名前一致で大きく動いた場合は理由に注記",
+          "元の座標" in osm.snap_confidence(
+              {"name_match": "名称が一致（五香アンダーパス）", "distance_m": 258})[1])
     check("名前不一致で遠ければ 低", osm.snap_confidence(
         {"name_match": "", "distance_m": 260})[0] == "低")
     lv, why = osm.snap_confidence({"name_match": "", "distance_m": 260})
@@ -137,6 +142,41 @@ def test_max_move():
     ways = [line(140.0990, 35.6050, 140.1010, 35.6050, highway="residential", tunnel="yes")]
     check("上限を超える距離には寄せない", osm.snap_one(spot, ways, max_move=100) is None)
     check("上限内なら寄せる", osm.snap_one(spot, ways, max_move=800) is not None)
+
+
+def test_two_tier_limit():
+    """名前が一致する線は遠くても、一致しない線は近くだけ。
+
+    実データで「名前が合わないのに240〜296m動く」候補がほぼ別の構造物だったため、
+    名前の一致有無で上限を分ける。誤った位置に置くより、動かさない方が安全。
+    """
+    # 約255m離れた線
+    far_named = line(140.0990, 35.6023, 140.1010, 35.6023,
+                     highway="residential", tunnel="yes", name="五香アンダーパス")
+    far_other = line(140.0990, 35.6023, 140.1010, 35.6023,
+                     highway="residential", tunnel="yes", name="無関係な通り")
+    near_unnamed = line(140.0990, 35.6005, 140.1010, 35.6005,
+                        highway="residential", tunnel="yes")
+
+    named = {"lon": 140.1000, "lat": 35.6000, "road": "", "road_type": "市道", "name": "五香立体"}
+    plain = {"lon": 140.1000, "lat": 35.6000, "road": "", "road_type": "市道", "name": "八幡1丁目"}
+
+    r = osm.snap_one(named, [far_named], max_move=300, max_move_unnamed=150)
+    check("名前が一致すれば255mでも寄せる", r is not None and r["snap_confidence"] == "高",
+          str(r and (r["distance_m"], r["snap_confidence"])))
+    check("大きく動いた場合は注記が出る",
+          r is not None and "元の座標" in r["why"], str(r and r["why"]))
+
+    check("名前が一致しない255mには寄せない",
+          osm.snap_one(plain, [far_other], max_move=300, max_move_unnamed=150) is None)
+
+    r3 = osm.snap_one(plain, [near_unnamed], max_move=300, max_move_unnamed=150)
+    check("名前が一致しなくても近ければ寄せる",
+          r3 is not None and r3["snap_confidence"] == "中",
+          str(r3 and (r3["distance_m"], r3["snap_confidence"])))
+
+    check("上限を揃えれば従来どおり（後方互換）",
+          osm.snap_one(plain, [far_other], max_move=300) is not None)
 
 
 def test_bbox():
@@ -240,6 +280,7 @@ def main():
     test_name_match_wins()
     test_snap_confidence()
     test_max_move()
+    test_two_tier_limit()
     test_bbox()
     test_http_headers_ascii()
     test_cli_end_to_end()

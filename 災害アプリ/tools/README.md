@@ -58,6 +58,10 @@ python3 tools/osm_snap.py --spots data/spots_chiba.json --fetch
 python3 tools/osm_snap.py --spots data/spots_chiba.json --dry-run   # 確認
 python3 tools/osm_snap.py --spots data/spots_chiba.json --apply     # 反映
 
+# 上限は名前の一致有無で分けている（既定: 一致300m / 不一致150m）。
+# 「見つからない」を減らしたい場合は緩められるが、誤った位置に置く危険が増える
+python3 tools/osm_snap.py --spots data/spots_chiba.json --dry-run --max-move-unnamed 250
+
 # 7. ★人手レビュー：地図上で座標を確認・修正する（その場でJSONに保存される）
 python3 tools/review_spots.py --spots data/spots_chiba.json
 

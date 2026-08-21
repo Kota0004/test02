@@ -190,24 +190,33 @@ def name_bonus(spot_refs: set[str], spot_names: set[str], tags: dict) -> tuple[f
     return 0.0, ""
 
 
-def snap_one(spot: dict, ways: list[dict], max_move: float) -> dict | None:
+def snap_one(spot: dict, ways: list[dict], max_move: float,
+             max_move_unnamed: float | None = None) -> dict | None:
     """最も「もっともらしい」線へ寄せる。
 
     単純な最短距離ではなく、種類のペナルティを足した距離で比べる。
     そうしないと、たまたま近くを通る鉄道橋が、本命の道路トンネルより
     優先されてしまう（逆に、真上に鉄道橋があるガード下は拾えなくなる）。
+
+    上限は2段階にする。実データでは、名前が一致しないのに200m以上動く候補は
+    ほぼ別の構造物だった（「国道356号バイパス」が名前のないトンネルに294m など）。
+    誤った位置に自信を持って置くより、動かさずに手で確認してもらう方が安全なので、
+    **名前が一致しない候補には短い上限**をかける。
     """
     spot_refs, spot_names = name_tokens(spot.get("road", ""), spot.get("name", ""),
                                         spot.get("road_type", ""))
+    if max_move_unnamed is None:
+        max_move_unnamed = max_move
 
     best = None
     for w in ways:
         tags = w.get("tags") or {}
         prio, label = categorize(tags)
-        hit = geo.nearest_on_ways(spot["lon"], spot["lat"], [w], max_m=max_move)
+        bonus, bonus_reason = name_bonus(spot_refs, spot_names, tags)
+        limit = max_move if bonus_reason else min(max_move, max_move_unnamed)
+        hit = geo.nearest_on_ways(spot["lon"], spot["lat"], [w], max_m=limit)
         if not hit:
             continue
-        bonus, bonus_reason = name_bonus(spot_refs, spot_names, tags)
         effective = hit["distance_m"] + prio * PRIO_PENALTY_M - bonus
         if best is None or effective < best["effective"]:
             best = {
@@ -229,8 +238,11 @@ def snap_one(spot: dict, ways: list[dict], max_move: float) -> dict | None:
 def snap_confidence(res: dict) -> tuple[str, str]:
     """寄せた結果の確からしさ。レビューでどこを重点的に見るかの目安にする。"""
     if res["name_match"]:
+        if res["distance_m"] > 200:
+            return "高", (f"{res['name_match']}。ただし {res['distance_m']:.0f}m 動いたので"
+                          "元の座標がかなりずれていた可能性があります")
         return "高", res["name_match"]
-    if res["distance_m"] <= 120:
+    if res["distance_m"] <= 80:
         return "中", f"名前は一致しないが近い（{res['distance_m']:.0f}m）"
     return "低", (f"名前が一致せず {res['distance_m']:.0f}m 離れている。"
                   "別の構造物を掴んでいる可能性があります")
@@ -245,7 +257,11 @@ def main() -> int:
     ap.add_argument("--apply", action="store_true", help="寄せた座標を書き込む")
     ap.add_argument("--dry-run", action="store_true", help="寄せる内容を表示するだけ")
     ap.add_argument("--max-move", type=float, default=300.0,
-                    help="これ以上離れた線へは寄せない[m]（既定300）")
+                    help="路線名が一致した線への上限[m]（既定300）")
+    ap.add_argument("--max-move-unnamed", type=float, default=150.0,
+                    help="路線名が一致しない線への上限[m]（既定150）。"
+                         "実データでは、名前が合わないのに200m以上動く候補は"
+                         "ほぼ別の構造物だった")
     ap.add_argument("--include-reviewed", action="store_true",
                     help="人手で確認済みの地点も動かす（既定は動かさない）")
     args = ap.parse_args()
@@ -267,6 +283,7 @@ def main() -> int:
         return 1
     ways = json.loads(cache.read_text(encoding="utf-8"))["ways"]
     print(f"OSMの線: {len(ways)} 本")
+    print(f"寄せる上限: 路線名が一致 {args.max_move:.0f}m / 一致しない {args.max_move_unnamed:.0f}m")
 
     moved, skipped_reviewed, not_found = [], 0, []
     for s in spots:
@@ -276,7 +293,7 @@ def main() -> int:
             skipped_reviewed += 1
             continue
 
-        res = snap_one(s, ways, args.max_move)
+        res = snap_one(s, ways, args.max_move, args.max_move_unnamed)
         if not res:
             not_found.append(s["id"])
             continue
