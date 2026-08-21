@@ -410,19 +410,57 @@ def geocode(query: str, session, sleep_s: float, cache: dict) -> dict | None:
     return res
 
 
+# 住所そのものの細かさ。番地まであるか、町名止まりかで、
+# たとえ検索が「一致」しても点の精度は変わる。
+DETAILED_RE = re.compile(r"\d+\s*(丁目|番地|番|条|-\s*\d+)")
+DIGIT_RE = re.compile(r"\d")
+
+
+def address_granularity(q: str) -> str:
+    """住所の細かさ: detailed（番地まで）/ semi（数字あり）/ coarse（町名まで）"""
+    if DETAILED_RE.search(q):
+        return "detailed"
+    if DIGIT_RE.search(q):
+        return "semi"
+    return "coarse"
+
+
 def confidence_of(query: str, res: dict | None) -> tuple[float, str]:
-    """ジオコーディング結果の確からしさ。低いものは人手レビューに回す。"""
+    """ジオコーディング結果の確からしさ。低いものは人手レビューに回す。
+
+    検索の一致度だけでは足りない。「千葉県市原市五井」のような町名までの住所は、
+    そのまま一致しても点は町の中心どまりで、実際の地下道の位置ではない。
+    そこで住所そのものの細かさで上限をかけ、レビューに回るようにする。
+    """
     if not res:
         return 0.0, "ジオコーディング失敗"
+
     title = norm(res["title"])
     q = norm(query)
+
     if title == q:
-        return 1.0, ""
-    if q.startswith(title) and len(title) >= len(q) - 6:
-        return 0.8, "住所の末尾（丁目・番地）が一致しない"
-    if len(title) <= 6:
-        return 0.3, "市区町村レベルまでしか特定できていない"
-    return 0.5, "部分一致"
+        conf, note = 1.0, ""
+    elif q.startswith(title) and len(title) >= len(q) - 6:
+        conf, note = 0.8, "住所の末尾（丁目・番地）が一致しない"
+    elif len(title) <= 6:
+        conf, note = 0.3, "市区町村レベルまでしか特定できていない"
+    else:
+        conf, note = 0.5, "部分一致"
+
+    gran = address_granularity(q)
+    if gran == "coarse":
+        # 町名までしか無いので、一致していても点は町の中心あたりにしかならない
+        capped = min(conf, 0.4)
+        if capped < conf:
+            note = "資料の住所が町名までしかない（現地の位置は要確認）"
+        conf = capped
+    elif gran == "semi":
+        capped = min(conf, 0.7)
+        if capped < conf:
+            note = "住所に丁目・番地が無い（現地の位置は要確認）"
+        conf = capped
+
+    return conf, note
 
 
 def main() -> int:
@@ -510,6 +548,7 @@ def main() -> int:
             "evidence": {
                 "source": args.source or f"{pdf_path.name}",
                 "confidence": round(conf, 2),
+                "note": note,             # 確からしさが低い理由
                 "verified_at": None,      # 人手レビューで日付を入れる
             },
         }

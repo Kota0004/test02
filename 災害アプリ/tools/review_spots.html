@@ -279,12 +279,17 @@
 
     document.getElementById('eName').textContent = s.name || s.id;
     const ev = s.evidence || {};
+    const conf = ev.confidence ?? 0;
+    const confColor = conf >= 0.8 ? '#22c55e' : conf >= 0.5 ? '#e8c33c' : '#ef4444';
     document.getElementById('eMeta').innerHTML = [
       s.address ? `住所: <b>${esc(s.address)}</b>` : '',
-      s.road ? `路線: ${esc(s.road)}` : '',
+      // 資料の原文（「五井（五井アンダーパス）」など）。現地を探す手がかりになる
+      s.locality && s.locality !== s.address ? `資料の記載: <b>${esc(s.locality)}</b>` : '',
+      s.road ? `路線: ${esc(s.road)}${s.road_type ? `（${esc(s.road_type)}）` : ''}` : '',
       `ID: ${esc(s.id)}`,
-      ev.source ? `出典: ${esc(ev.source)}` : '',
-      `機械判定の確からしさ: <b>${(ev.confidence ?? 0).toFixed(2)}</b>`
+      `機械判定の確からしさ: <b style="color:${confColor}">${conf.toFixed(2)}</b>`
+      + (ev.note ? `（${esc(ev.note)}）` : ''),
+      ev.source ? `出典: ${esc(ev.source)}` : ''
     ].filter(Boolean).join(' ／ ');
     document.getElementById('eKind').value = s.kind || 'lowland';
     document.getElementById('eHist').value = s.hist || 0;

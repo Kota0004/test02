@@ -51,6 +51,29 @@ def test_confidence():
           bs.confidence_of(q, {"title": "千葉市", "lon": 0, "lat": 0})[0] <= 0.3)
     check("失敗は 0.0", bs.confidence_of(q, None)[0] == 0.0)
 
+    # 住所の細かさ
+    for addr, want in [("千葉県習志野市袖ケ浦1丁目11番", "detailed"),
+                       ("千葉県袖ケ浦市神納4191-1", "detailed"),
+                       ("千葉県市原市五井2", "semi"),
+                       ("千葉県市原市五井", "coarse"),
+                       ("千葉県市原市", "coarse")]:
+        got = bs.address_granularity(addr)
+        check(f"住所の細かさ {addr}", got == want, f"実際={got} 期待={want}")
+
+    # 粗い住所は、たとえ完全一致でも高信頼にしない
+    coarse = "千葉県市原市五井"
+    c, note = bs.confidence_of(coarse, {"title": coarse})
+    check("町名までの住所は完全一致でも上限0.4", c <= 0.4, f"{c} / {note}")
+    check("その理由が注記に出る", "町名までしかない" in note, note)
+
+    semi = "千葉県市原市五井2"
+    c2, note2 = bs.confidence_of(semi, {"title": semi})
+    check("丁目・番地が無い住所は上限0.7", c2 <= 0.7, f"{c2} / {note2}")
+
+    detailed = "千葉県習志野市袖ケ浦1丁目11番"
+    c3, _ = bs.confidence_of(detailed, {"title": detailed})
+    check("番地まである住所の完全一致は1.0のまま", c3 == 1.0, str(c3))
+
 
 def test_extract():
     if not FIXTURE.exists():
