@@ -68,9 +68,16 @@ python3 tools/review_spots.py --spots data/spots_chiba.json
 # 8. 座標が正しくなったので dz を計算し直す
 python3 tools/enrich_dem.py --in data/spots_chiba.json --out data/spots_chiba.json
 
+# 9. ★点検：公開・配布の前に必ず通す
+python3 tools/validate_spots.py --spots data/spots_chiba.json
+
 # iPad / GitHub Codespaces から使う場合
 python3 tools/review_spots.py --spots data/spots_chiba.json --ipad
 ```
+
+`validate_spots.py` は、座標の範囲・重複・レビューの進み具合・閾値の分布・
+危険度の出方をまとめて調べ、**対応が必要なものだけ**を挙げる。
+「誤った地点を危険と表示する」ことを防ぐ最後の関門（docs/07）。
 
 **dz は座標から計算するので、レビューの前後で2回実行する。** レビュー前の値は目安に過ぎず、
 座標が丁目の中心にあるまま測った高低差には意味がない。
