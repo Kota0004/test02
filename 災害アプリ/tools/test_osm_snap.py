@@ -88,6 +88,35 @@ def test_bbox():
           q.count("way[") == 3 and "out geom;" in q, q.replace("\\n", " ")[:80])
 
 
+def test_http_headers_ascii():
+    """HTTPヘッダに日本語を入れない。
+
+    requests はヘッダを latin-1 で送るため、日本語が入っていると
+    通信する前に UnicodeEncodeError になる（実際にこれで取得に失敗した）。
+    再発防止のため、全ツールの User-Agent を機械的に点検する。
+    """
+    import re
+
+    check("osm_snap の User-Agent が latin-1 で送れる",
+          _latin1_ok(osm.USER_AGENT), osm.USER_AGENT)
+
+    pat = re.compile(r'User-Agent"\]?\s*[:=]\s*"([^"]*)"')
+    checked = 0
+    for path in sorted((ROOT / "tools").glob("*.py")):
+        for ua in pat.findall(path.read_text(encoding="utf-8")):
+            checked += 1
+            check(f"{path.name} の User-Agent が latin-1 で送れる", _latin1_ok(ua), ua)
+    check("User-Agent を1つ以上点検した", checked >= 4, f"点検数={checked}")
+
+
+def _latin1_ok(v: str) -> bool:
+    try:
+        v.encode("latin-1")
+        return True
+    except UnicodeEncodeError:
+        return False
+
+
 def test_cli_end_to_end():
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
@@ -148,6 +177,7 @@ def main():
     test_priority()
     test_max_move()
     test_bbox()
+    test_http_headers_ascii()
     test_cli_end_to_end()
     print("===== osm_snap.py 検証 =====")
     for s in ok:

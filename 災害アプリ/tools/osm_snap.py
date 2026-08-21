@@ -38,6 +38,10 @@ import geo  # noqa: E402
 
 OVERPASS = "https://overpass-api.de/api/interpreter"
 
+# HTTPヘッダは latin-1 でしか送れないため、日本語を入れてはいけない。
+# （入れると UnicodeEncodeError になり、通信する前に失敗する）
+USER_AGENT = "mizumichi-osm-snap/0.1 (disaster-prevention research; +https://github.com/Kota0004/test02)"
+
 # 寄せ先の候補。上にあるものほど信頼できる。
 # ガード下は「道路側にタグが無く、跨いでいる鉄道側が bridge」という登録も多いので、
 # 見つからないときの手がかりとして鉄道橋も拾う。
@@ -74,13 +78,15 @@ def fetch(bbox, cache: Path, retries: int = 2) -> dict:
     for attempt in range(1, retries + 2):
         try:
             r = requests.post(OVERPASS, data={"data": query}, timeout=240,
-                              headers={"User-Agent": "mizumichi-osm-snap/0.1 (bosai app研究用)"})
-            if r.status_code == 429 or r.status_code == 504:
-                raise RuntimeError(f"混雑しています (HTTP {r.status_code})")
+                              headers={"User-Agent": USER_AGENT})
+            if r.status_code in (429, 504):
+                raise requests.exceptions.RetryError(f"混雑しています (HTTP {r.status_code})")
             r.raise_for_status()
             data = r.json()
             break
-        except Exception as e:                              # noqa: BLE001
+        except requests.exceptions.RequestException as e:
+            # 通信まわりの失敗だけ再試行する。
+            # 設定ミスなど、待っても直らないものを再試行すると時間を無駄にするだけ。
             last = e
             if attempt <= retries:
                 wait = 20 * attempt
@@ -88,6 +94,10 @@ def fetch(bbox, cache: Path, retries: int = 2) -> dict:
                 time.sleep(wait)
             else:
                 raise SystemExit(f"Overpass API から取得できませんでした: {last}")
+        except Exception as e:                              # noqa: BLE001
+            raise SystemExit(
+                f"取得に失敗しました（再試行しても直らない種類の失敗です）: "
+                f"{type(e).__name__}: {e}")
 
     ways = [e for e in data.get("elements", []) if e.get("type") == "way" and e.get("geometry")]
     cache.parent.mkdir(parents=True, exist_ok=True)
