@@ -129,6 +129,35 @@ REF_BONUS_M = 150.0     # 路線番号の一致（国道356号 ↔ ref=356）
 NAME_BONUS_M = 120.0    # 名称の一致（新港穴川線 ↔ name に「新港穴川」）
 
 REF_RE = re.compile(r"(?:国道|県道|市道|町道|村道|主要地方道)?\s*(\d{1,4})\s*号")
+
+# 路線名（鉄道・道路）の抽出と正規化。
+# 「JR総武線」と「総武本線」は同じ路線なので、同じものとして扱えるようにする。
+LINE_RE = re.compile(r"([ぁ-んァ-ヶ一-龥A-Za-z]{2,10}(?:本線|新線|線))")
+LINE_PREFIX_RE = re.compile(r"^(JR東日本|JR|東日本旅客鉄道|旅客鉄道)")
+LINE_SUFFIX_RE = re.compile(r"(本線|新線|線)$")
+# 路線名が食い違ったときの減点[m]。ガード下の地点で別の鉄道を掴むのは明確な誤り
+LINE_CONFLICT_PENALTY_M = 250.0
+
+
+def line_cores(text: str) -> set[str]:
+    """文中の路線名を、比較できる形に揃えて取り出す。
+
+    「JR総武線」「総武本線」→ どちらも「総武」
+    「東武野田線」→「東武野田」、「野田線」→「野田」（部分一致で同一とみなす）
+    """
+    out = set()
+    for raw in LINE_RE.findall(norm_text(text)):
+        core = LINE_SUFFIX_RE.sub("", LINE_PREFIX_RE.sub("", raw)).strip()
+        if len(core) >= 2:
+            out.add(core)
+    return out
+
+
+def lines_agree(a: set[str], b: set[str]) -> bool:
+    """路線名の集合が同じ路線を指しているか（部分一致を許す）"""
+    if a & b:
+        return True
+    return any(x in y or y in x for x in a for y in b)
 # 路線名から特徴のある部分を取り出す（「新港穴川線」→「新港穴川」）
 NAME_TAIL_RE = re.compile(r"(線|号線|号|バイパス|通り|街道)$")
 
@@ -174,8 +203,12 @@ def norm_text(v) -> str:
     return unicodedata.normalize("NFKC", str(v or "")).strip()
 
 
-def name_bonus(spot_refs: set[str], spot_names: set[str], tags: dict) -> tuple[float, str]:
-    """OSMの線の名前が地点の路線名と一致すれば割引する。"""
+def name_bonus(spot_refs: set[str], spot_names: set[str], tags: dict,
+               spot_lines: set[str] | None = None) -> tuple[float, str]:
+    """OSMの線の名前と地点の路線名を突き合わせ、割引または減点する。
+
+    戻り値の1つ目は「効いた距離の調整量」（正なら割引、負なら減点）。
+    """
     way_ref = norm_text(tags.get("ref"))
     way_name = norm_text(tags.get("name"))
 
@@ -183,6 +216,16 @@ def name_bonus(spot_refs: set[str], spot_names: set[str], tags: dict) -> tuple[f
         parts = {p.strip() for p in re.split(r"[;,/]", way_ref)}
         if spot_refs & parts:
             return REF_BONUS_M, f"路線番号が一致（{way_ref}）"
+
+    # 資料に路線名があり、候補も路線名を持っていて、両者が別路線なら減点する。
+    # 「JR常磐線中原ガード」を東武野田線に寄せるような取り違えを防ぐ。
+    if spot_lines:
+        way_lines = line_cores(way_name)
+        if way_lines:
+            if lines_agree(spot_lines, way_lines):
+                return NAME_BONUS_M, f"路線名が一致（{way_name}）"
+            return -LINE_CONFLICT_PENALTY_M, f"資料は{'・'.join(sorted(spot_lines))}線"
+
     if spot_names and way_name:
         for token in spot_names:
             if token in way_name or way_name in token:
@@ -205,6 +248,7 @@ def snap_one(spot: dict, ways: list[dict], max_move: float,
     """
     spot_refs, spot_names = name_tokens(spot.get("road", ""), spot.get("name", ""),
                                         spot.get("road_type", ""))
+    spot_lines = line_cores(spot.get("name", "")) | line_cores(spot.get("locality", ""))
     if max_move_unnamed is None:
         max_move_unnamed = max_move
 
@@ -212,8 +256,9 @@ def snap_one(spot: dict, ways: list[dict], max_move: float,
     for w in ways:
         tags = w.get("tags") or {}
         prio, label = categorize(tags)
-        bonus, bonus_reason = name_bonus(spot_refs, spot_names, tags)
-        limit = max_move if bonus_reason else min(max_move, max_move_unnamed)
+        bonus, bonus_reason = name_bonus(spot_refs, spot_names, tags, spot_lines)
+        # 一致したものだけ遠くまで許す。減点されたものは通常の上限のまま
+        limit = max_move if bonus > 0 else min(max_move, max_move_unnamed)
         hit = geo.nearest_on_ways(spot["lon"], spot["lat"], [w], max_m=limit)
         if not hit:
             continue
@@ -221,13 +266,15 @@ def snap_one(spot: dict, ways: list[dict], max_move: float,
         if best is None or effective < best["effective"]:
             best = {
                 "effective": effective,
+                "conflict": bonus < 0,
                 "lon": round(hit["lon"], 6),
                 "lat": round(hit["lat"], 6),
                 "distance_m": round(hit["distance_m"], 1),
                 "matched": label,
                 "osm_id": w.get("id"),
                 "osm_name": tags.get("name") or tags.get("ref") or "",
-                "name_match": bonus_reason,
+                "name_match": bonus_reason if bonus > 0 else "",
+                "conflict_note": bonus_reason if bonus < 0 else "",
             }
     if best:
         best.pop("effective")
@@ -235,8 +282,16 @@ def snap_one(spot: dict, ways: list[dict], max_move: float,
     return best
 
 
+def is_conflict(res: dict | None) -> bool:
+    """資料の路線と違う線を掴んでいるか。掴んでいる場合は座標を動かさない。"""
+    return bool(res and res.get("conflict_note"))
+
+
 def snap_confidence(res: dict) -> tuple[str, str]:
     """寄せた結果の確からしさ。レビューでどこを重点的に見るかの目安にする。"""
+    if res.get("conflict_note"):
+        return "低", (f"{res['conflict_note']}なのに、別の路線（{res['osm_name']}）"
+                      "しか近くにありません")
     if res["name_match"]:
         if res["distance_m"] > 200:
             return "高", (f"{res['name_match']}。ただし {res['distance_m']:.0f}m 動いたので"
@@ -285,7 +340,7 @@ def main() -> int:
     print(f"OSMの線: {len(ways)} 本")
     print(f"寄せる上限: 路線名が一致 {args.max_move:.0f}m / 一致しない {args.max_move_unnamed:.0f}m")
 
-    moved, skipped_reviewed, not_found = [], 0, []
+    moved, skipped_reviewed, not_found, conflicted = [], 0, [], []
     for s in spots:
         if s.get("lon") is None:
             continue
@@ -294,6 +349,25 @@ def main() -> int:
             continue
 
         res = snap_one(s, ways, args.max_move, args.max_move_unnamed)
+
+        if is_conflict(res):
+            # 資料と違う路線に寄せるくらいなら動かさない。
+            # 丁目の中心に残っている方が、誤った構造物の上に置かれるよりまし。
+            # ただし「近くに何があったか」は探す手がかりになるので残す。
+            conflicted.append((s, res))
+            if args.apply:
+                s.setdefault("params", {})["snap_hint"] = {
+                    "not_applied": True,
+                    "nearby": f"{res['matched']} {res['osm_name']}".strip(),
+                    "distance_m": res["distance_m"],
+                    "why": res["why"],
+                    "source": "© OpenStreetMap contributors (ODbL)",
+                }
+                s.setdefault("evidence", {})["note"] = (
+                    f"{res['why']}。座標は動かしていません — "
+                    f"地図で{res['conflict_note'].replace('資料は', '')}を探して合わせてください")
+            continue
+
         if not res:
             not_found.append(s["id"])
             continue
@@ -316,7 +390,15 @@ def main() -> int:
                 f"（確からしさ {res['snap_confidence']}）。目視で確認してください")
 
     print(f"\n寄せられた地点: {len(moved)} 件 / 近くに見つからない: {len(not_found)} 件"
+          + (f" / 路線が食い違うため動かさない: {len(conflicted)} 件" if conflicted else "")
           + (f" / 確認済みのため対象外: {skipped_reviewed} 件" if skipped_reviewed else ""))
+
+    if conflicted:
+        print("\n  資料と違う路線しか見つからなかった地点（動かしません）:")
+        for s, r in conflicted:
+            print(f"    {s['id']} {s.get('name','')[:22]:<24} 近くに {r['osm_name']}"
+                  f"（{r['distance_m']:.0f}m）／ {r['conflict_note']}")
+        print("    → 地図で資料の路線を探して、手で位置を合わせてください")
 
     if moved:
         dists = sorted(r["distance_m"] for _, r in moved)

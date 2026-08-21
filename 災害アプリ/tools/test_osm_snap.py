@@ -121,6 +121,82 @@ def test_name_match_wins():
           r2 and r2["osm_name"] == "無関係なトンネル", str(r2 and r2["osm_name"]))
 
 
+def test_line_normalization():
+    """「JR総武線」と「総武本線」は同じ路線として扱う。"""
+    cases = [("JR総武線下", {"総武"}), ("総武本線", {"総武"}),
+             ("JR常磐線中原ガード", {"常磐"}), ("東武野田線下", {"東武野田"}),
+             ("JR武蔵野線下", {"武蔵野"}), ("総武緩行線", {"総武緩行"})]
+    for text, want in cases:
+        got = osm.line_cores(text)
+        check(f"路線名の正規化 {text}", got == want, f"実際={sorted(got)} 期待={sorted(want)}")
+
+    check("JR総武線 と 総武本線 は同一",
+          osm.lines_agree(osm.line_cores("JR総武線"), osm.line_cores("総武本線")))
+    check("東武野田線 と 野田線 は同一",
+          osm.lines_agree(osm.line_cores("東武野田線"), osm.line_cores("野田線")))
+    check("JR常磐線 と 東武野田線 は別",
+          not osm.lines_agree(osm.line_cores("JR常磐線"), osm.line_cores("東武野田線")))
+
+
+def test_line_conflict():
+    """資料と違う路線に寄せない。動かさずにヒントだけ残す。"""
+    spot = {"lon": 140.1000, "lat": 35.6000, "name": "JR常磐線中原ガード", "road": ""}
+    wrong = line(140.0990, 35.6013, 140.1010, 35.6013,
+                 railway="rail", bridge="yes", name="東武野田線")     # 約144m
+    r = osm.snap_one(spot, [wrong], max_move=300, max_move_unnamed=150)
+    check("別路線でも候補としては返る（ヒントに使う）", r is not None)
+    check("食い違いとして印が付く", osm.is_conflict(r), str(r and r.get("conflict_note")))
+    check("確からしさは 低", r and r["snap_confidence"] == "低", str(r and r["snap_confidence"]))
+    check("理由に資料の路線が出る", r and "常磐" in r["conflict_note"], str(r and r["conflict_note"]))
+    check("一致扱いにはしない", r and r["name_match"] == "", str(r and r["name_match"]))
+
+    right = line(140.0990, 35.6013, 140.1010, 35.6013,
+                 railway="rail", bridge="yes", name="常磐線")
+    r2 = osm.snap_one(spot, [right], max_move=300, max_move_unnamed=150)
+    check("同じ路線なら一致扱い", r2 and not osm.is_conflict(r2) and r2["snap_confidence"] == "高",
+          str(r2 and (r2["snap_confidence"], r2["name_match"])))
+
+    # 「JR総武線」の地点が「総武本線」に当たれば一致（かつては食い違い扱いだった）
+    spot2 = {"lon": 140.1000, "lat": 35.6000, "name": "JR総武線下", "road": ""}
+    honsen = line(140.0990, 35.6005, 140.1010, 35.6005,
+                  railway="rail", bridge="yes", name="総武本線")
+    r3 = osm.snap_one(spot2, [honsen], max_move=300, max_move_unnamed=150)
+    check("JR総武線 → 総武本線 は一致として扱う",
+          r3 and r3["snap_confidence"] == "高" and "総武本線" in r3["name_match"],
+          str(r3 and (r3["snap_confidence"], r3["name_match"])))
+
+
+def test_conflict_not_applied():
+    """食い違う地点は座標を動かさず、ヒントだけ記録する。"""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        sp = tmp / "spots.json"
+        sp.write_text(json.dumps({"version": "test", "spots": [
+            {"id": "x", "name": "JR常磐線中原ガード", "kind": "underpass_gravity",
+             "lon": 140.1000, "lat": 35.6000, "evidence": {"verified_at": None}}]},
+            ensure_ascii=False), encoding="utf-8")
+        cache = tmp / "osm.json"
+        cache.write_text(json.dumps({"ways": [
+            line(140.0990, 35.6013, 140.1010, 35.6013,
+                 railway="rail", bridge="yes", name="東武野田線")]}), encoding="utf-8")
+        r = subprocess.run(
+            [sys.executable, str(ROOT / "tools" / "osm_snap.py"),
+             "--spots", str(sp), "--cache", str(cache), "--apply"],
+            capture_output=True, text=True)
+        check("食い違いがあってもCLIは正常終了する", r.returncode == 0, (r.stderr or "")[:100])
+        check("食い違いとして報告される", "路線が食い違うため動かさない: 1" in r.stdout,
+              [l for l in r.stdout.splitlines() if "食い違" in l][:1])
+        after = json.loads(sp.read_text(encoding="utf-8"))["spots"][0]
+        check("座標は動かさない", after["lat"] == 35.6000 and after["lon"] == 140.1000,
+              f"{after['lat']},{after['lon']}")
+        hint = (after.get("params") or {}).get("snap_hint")
+        check("近くに何があったかをヒントとして残す",
+              hint and "東武野田線" in hint["nearby"] and hint["not_applied"] is True,
+              json.dumps(hint, ensure_ascii=False) if hint else "なし")
+        check("探すべき路線を注記に書く", "常磐" in after["evidence"]["note"],
+              after["evidence"]["note"])
+
+
 def test_snap_confidence():
     check("名前一致は 高", osm.snap_confidence(
         {"name_match": "路線番号が一致（297）", "distance_m": 250})[0] == "高")
@@ -278,6 +354,9 @@ def main():
     test_priority()
     test_name_tokens()
     test_name_match_wins()
+    test_line_normalization()
+    test_line_conflict()
+    test_conflict_not_applied()
     test_snap_confidence()
     test_max_move()
     test_two_tier_limit()

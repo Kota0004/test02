@@ -310,8 +310,16 @@
 
     // OSMのトンネルへ自動で寄せた地点は、その根拠を出す（確定ではないので確認が要る）
     const snap = (s.params || {}).snap;
+    const hint = (s.params || {}).snap_hint;
     const snapEl = document.getElementById('snapInfo');
-    if (!snap) { snapEl.innerHTML = ''; }
+    if (!snap && hint) {
+      // 資料と違う路線しか無かったので動かしていない地点。探す手がかりを出す
+      snapEl.style.color = '#e8c33c';
+      snapEl.innerHTML = `⚠ <b>座標は自動調整していません</b> — 近くにあるのは`
+        + ` ${esc(hint.nearby)}（${Math.round(hint.distance_m)}m）だけで、資料の路線と違います。`
+        + ` <b>地図で資料の路線を探して合わせてください</b>`;
+    }
+    else if (!snap) { snapEl.innerHTML = ''; }
     else {
       // 確からしさで色を変える。「低」は重点的に見てほしい
       const conf = snap.confidence || '中';
