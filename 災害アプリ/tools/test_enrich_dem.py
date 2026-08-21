@@ -71,11 +71,27 @@ def test_dz_affects_threshold():
           f"窪地 {a.t60:.1f} < 高台 {b.t60:.1f} mm/h")
 
 
+def test_tunnel_not_flagged():
+    """トンネル・立体の大きな高低差を「座標の誤り」として扱わない。
+
+    標高データは地表（山や築堤）を測るので、山を貫くトンネルでは
+    道路面ではなく上の地形の高さが出る。実データでも
+    「利根山隧道 -9.6m」「竹岡立体地下道 +15.5m」が警告になっていた。
+    """
+    check("トンネルは警告対象から外れる", bool(enrich_dem.TUNNELISH_RE.search("利根山隧道")))
+    check("立体も外れる", bool(enrich_dem.TUNNELISH_RE.search("竹岡立体地下道")))
+    check("ガード下は対象のまま（構造上の理由が無い）",
+          not enrich_dem.TUNNELISH_RE.search("JR常磐線船取ガード"))
+    check("地下道は対象のまま",
+          not enrich_dem.TUNNELISH_RE.search("原木地下道"))
+
+
 def main():
     test_encode_decode_roundtrip()
     test_nodata()
     test_relative_elevation()
     test_dz_affects_threshold()
+    test_tunnel_not_flagged()
     print("===== enrich_dem.py 検証 =====")
     for s in ok:
         print("  ✅ " + s)

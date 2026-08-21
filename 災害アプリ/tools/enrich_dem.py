@@ -26,6 +26,11 @@ import geo  # noqa: E402
 # 道路の周囲100mでこれ以上の高低差は現実的でない。座標のずれを疑う目安。
 IMPLAUSIBLE_DZ_M = 6.0
 
+# ただしトンネル・立体は、標高データが「上の地形（山や築堤）」を測るため、
+# 座標が正しくても大きな高低差が出る。これを座標の誤りとして扱わない。
+import re  # noqa: E402
+TUNNELISH_RE = re.compile(r"(トンネル|隧道|立体)")
+
 
 class ElevationSampler:
     """地理院 PNG 標高タイルから標高を引く。タイルはメモリにキャッシュする。
@@ -124,10 +129,21 @@ def main() -> int:
         # （崖・造成地・高架の上などに落ちている）。レビューで直す対象として印を付ける。
         note = ""
         if abs(dz) > IMPLAUSIBLE_DZ_M:
-            s["params"]["dz_warning"] = (
-                f"周囲との高低差が {dz:+.1f}m と大きすぎます。座標がずれている可能性があります")
-            suspicious.append(s["id"])
-            note = "  ← ⚠ 座標がずれている疑い"
+            if TUNNELISH_RE.search(s.get("name", "")):
+                # 山を貫くトンネルなどは、標高データが道路面ではなく上の地形を測る
+                s["params"]["dz_note"] = (
+                    f"高低差が {dz:+.1f}m と大きいですが、トンネル・立体のため"
+                    "標高データが上の地形を測っている可能性があります")
+                s["params"].pop("dz_warning", None)
+                note = "  （トンネル・立体のため大きく出ます）"
+            else:
+                s["params"]["dz_warning"] = (
+                    f"周囲との高低差が {dz:+.1f}m と大きすぎます。座標がずれている可能性があります")
+                suspicious.append(s["id"])
+                note = "  ← ⚠ 座標がずれている疑い"
+        else:
+            s["params"].pop("dz_warning", None)
+            s["params"].pop("dz_note", None)
         print(f"  + {s['id']} {s['name']}: dz={dz:+.2f}m "
               f"(標高 {info['center']:.1f}m / 周囲中央値 {info['ring_median']:.1f}m){note}")
 
