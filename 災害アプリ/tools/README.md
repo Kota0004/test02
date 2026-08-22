@@ -129,6 +129,7 @@ python3 tools/probe_endpoints.py --url https://pub.os-alert.info/chiba/devmap --
 | `test_osm_snap.py` | 点と線分の距離、寄せ先の優先順位、上限、確認済みの保護、出典の記録 |
 | `verify_prototype.js` | ブラウザでの実動作13項目（雨量フィルタ・現在地アラート・クールダウン・ラベル・障害時の劣化動作） |
 | `verify_ipad.js` | iPad 横/縦でのはみ出し・タップ領域・主要操作 14項目 |
+| `verify_live.js` | 「いまの雨量」モード（鮮度表示・切替・取り込み値の反映）8項目 |
 
 ## ファイル
 
@@ -140,6 +141,7 @@ python3 tools/probe_endpoints.py --url https://pub.os-alert.info/chiba/devmap --
 | `enrich_dem.py` | ② 標高タイルから相対標高 dz を付与 |
 | `osm_snap.py` | ② OSMのトンネル情報へ座標を寄せる（住所検索では構造物を指せないため） |
 | `validate_spots.py` | ② データの点検（座標・重複・レビュー状況・閾値と危険度の分布） |
+| `export_prototype_data.py` | レビュー済みデータをアプリが読む形に書き出す（除外を省き、未確認に印を付ける） |
 | `fetch_amedas.py` | ③ アメダス10分値 → 各地点の雨量と危険度 |
 | `probe_endpoints.py` | ④ 公開ページのデータ取得口を調査 |
 | `review_spots.py` / `.html` | ② 座標を地図上で確認・修正するレビュー画面（ローカルサーバ） |

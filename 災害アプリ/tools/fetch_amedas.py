@@ -123,6 +123,8 @@ def interpolate(spots, stations, obs, k=3, max_km=40.0):
     for s in spots:
         if s.get("lon") is None or s.get("lat") is None:
             continue
+        if (s.get("review") or {}).get("status") == "excluded":
+            continue        # レビューで除外した地点に危険度を出さない
         rain = {}
         for name, pts in samples.items():
             rain[name] = geo.idw(pts, s["lon"], s["lat"], k=k, max_km=max_km)

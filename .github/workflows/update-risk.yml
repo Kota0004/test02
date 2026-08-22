@@ -1,0 +1,81 @@
+# 気象庁アメダスの雨量を定期的に取り込み、各危険箇所の危険度を更新する。
+#
+# GitHub Actions はネットワークに出られるので、手元で何も操作しなくても
+# データが更新される。危険度が変わったときだけコミットするので、
+# 晴れが続く間はリポジトリが汚れない。
+name: 雨量と危険度を更新
+
+on:
+  schedule:
+    # 毎時0分（UTC基準・GitHubの都合で数分ずれることがある）
+    - cron: "0 * * * *"
+  workflow_dispatch:        # 手動でも実行できる
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-risk
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 依存を入れる
+        run: pip install -r 災害アプリ/tools/requirements.txt
+
+      - name: 雨量を取り込み危険度を計算する
+        id: fetch
+        working-directory: 災害アプリ
+        run: |
+          set -o pipefail
+          python3 tools/fetch_amedas.py \
+            --spots data/spots_chiba.json \
+            --out prototype/data/risk_latest.json | tee /tmp/out.txt
+          {
+            echo "### 取り込み結果"
+            echo '```'
+            cat /tmp/out.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 危険度が変わったときだけコミットする
+        working-directory: 災害アプリ
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, subprocess, sys
+          new = pathlib.Path("prototype/data/risk_latest.json")
+          cur = json.loads(new.read_text(encoding="utf-8"))
+          try:
+              old_raw = subprocess.run(
+                  ["git", "show", f"HEAD:災害アプリ/{new}"],
+                  capture_output=True, text=True, check=True).stdout
+              old = json.loads(old_raw)
+          except Exception:
+              old = {"spots": {}}
+
+          def levels(d):
+              return {k: v.get("level") for k, v in (d.get("spots") or {}).items()}
+
+          a, b = levels(old), levels(cur)
+          changed = [k for k in set(a) | set(b) if a.get(k) != b.get(k)]
+          print(f"危険度が変わった地点: {len(changed)} 件")
+          pathlib.Path("/tmp/changed").write_text(str(len(changed)))
+          PY
+          n=$(cat /tmp/changed)
+          if [ "$n" = "0" ]; then
+            echo "変化なし。コミットしません。"
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add prototype/data/risk_latest.json
+          git commit -m "危険度を更新（$n 地点で変化）"
+          git push

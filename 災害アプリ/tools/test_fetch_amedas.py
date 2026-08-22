@@ -80,6 +80,21 @@ def test_interpolation_and_risk(table, obs, ts):
     return res
 
 
+def test_excluded_skipped():
+    """レビューで除外した地点には危険度を出さない。"""
+    spots = json.loads(SPOTS.read_text(encoding="utf-8"))["spots"]
+    marked = [dict(x) for x in spots]
+    marked[0]["review"] = {"status": "excluded"}
+    src = fa.Source(FX)
+    ts, table, obs = src.latest_time(), src.table(), src.observations(src.latest_time())
+    stations = fa.station_points(table, (139.6, 34.8, 141.0, 36.2))
+    res = fa.build_risk(marked, stations, obs, ts)
+    check("除外した地点は危険度に含まれない",
+          marked[0]["id"] not in res["spots"], marked[0]["id"])
+    check("残りの地点は計算される", res["_stats"]["spots"] == len(spots) - 1,
+          f"{res['_stats']['spots']} / 期待 {len(spots)-1}")
+
+
 def test_cli():
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "risk.json"
@@ -100,6 +115,7 @@ def main():
     test_station_points(table)
     test_value_of(obs)
     res = test_interpolation_and_risk(table, obs, ts)
+    test_excluded_skipped()
     test_cli()
 
     print("===== fetch_amedas.py 検証 =====")

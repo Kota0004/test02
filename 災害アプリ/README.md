@@ -80,7 +80,8 @@ cd 災害アプリ/prototype && python3 -m http.server 8000
 - 現在地（または Shift＋クリック）から半径内の危険箇所を検出してアラート
 - 地点をクリックすると「この地点の閾値」と「判定理由」が出る
 
-> ⚠️ **表示している地点はすべてダミーデータ**で、実在の危険箇所ではありません。
+> 実データ（千葉県89箇所）を同梱しています。`prototype/data/spots_chiba.json` が
+> 無い場合は、動作確認用のダミーデータにフォールバックします。
 
 ---
 
@@ -102,33 +103,45 @@ cd 災害アプリ/prototype && python3 -m http.server 8000
 
 ---
 
-## 進捗と次の一手
+## いまの状態
 
-| # | やること | 状態 |
-|---|---------|------|
-| ① | プロトタイプを動かして体験を確認 | ✅ 実装・自動検証済み（13項目すべて成功） |
-| ② | 千葉県内95箇所を座標付きデータ化 | 🔧 **ツール完成・PDF待ち**（`build_spots.py` + `enrich_dem.py` + `review_spots.py`） |
-| ③ | アメダスのリアルタイム雨量を取り込む | 🔧 **ツール完成・実データでの疎通待ち**（`fetch_amedas.py`） |
-| ④ | 千葉市 地下道システムのデータ形式確認と連携打診 | 🔧 **調査ツール＋打診文案あり**（`probe_endpoints.py` / [docs/08](docs/08_自治体連携_打診文案.md)） |
+**千葉県内の実データで動いています。** アプリを開くと、実在する道路冠水注意箇所
+**89箇所**が地図に出て、雨量に応じて色が変わります。
 
-②〜④は、ツールと検証は完成していますが、**外部サイトへの実アクセスがまだ**です。
-手元で次の3つを実行すれば、そのまま実データに進めます。
+| # | やったこと | 状態 |
+|---|-----------|------|
+| ① | プロトタイプの実装と検証 | ✅ 実データで35項目（本体13・iPad14・いまの雨量8）すべて成功 |
+| ② | 千葉県内95箇所を座標付きデータ化 | ✅ PDF→座標化→OSMで補正→**人手レビュー67件確認・6件除外**（残22件は未確認として区別） |
+| ③ | アメダスの雨量取り込み | ✅ 実装済み。**GitHub Actions が毎時自動で取り込む**ので操作不要 |
+| ④ | 千葉市 地下道システムの調査・自治体への打診 | 🔧 調査ツールと文案あり（[docs/08](docs/08_自治体連携_打診文案.md)）。**送信はこれから** |
+
+### 動かす
 
 ```bash
-pip install -r tools/requirements.txt
-python3 tools/doctor.py                 # いまの状態と次にやることを確認
-
-# ② PDFを入手して座標化 → 地図上で人手レビュー
-python3 tools/build_spots.py --pdf 一覧表.pdf --area chiba --out data/spots_chiba.json
-python3 tools/enrich_dem.py --in data/spots_chiba.json --out data/spots_chiba.json
-python3 tools/review_spots.py --spots data/spots_chiba.json
-
-# ③ アメダスから雨量を取って危険度を出す
-python3 tools/fetch_amedas.py --spots data/spots_chiba.json --out data/risk_latest.json
-
-# ④ 千葉市システムのデータ取得口を調べる
-python3 tools/probe_endpoints.py --url https://pub.os-alert.info/chiba/devmap --browser
+cd 災害アプリ/prototype && python3 -m http.server 8000
+# → http://localhost:8000/
 ```
+
+雨量スライダーを動かすと、実際の千葉県の危険箇所の色が変わります。
+`data/risk_latest.json` があれば「🌧 いまの雨量を使う」で実測値に切り替わります。
+
+### 自動で動いている仕組み
+
+| 仕組み | 内容 |
+|-------|------|
+| `.github/workflows/update-risk.yml` | 毎時アメダスから雨量を取り込み、**危険度が変わったときだけ**コミット |
+| `.github/workflows/tests.yml` | push のたびに全テストとデータ点検を実行 |
+
+**どちらも手元での操作は不要**です（スケジュール実行は既定ブランチにマージ後に有効）。
+
+### 残っていること
+
+1. **未確認22件の位置確認** — `python3 tools/review_spots.py --spots data/spots_chiba.json --ipad`
+   （アプリ側では未確認と明示して区別しているので、この状態でも安全に使えます）
+2. **自治体への問い合わせ** — [docs/08](docs/08_自治体連携_打診文案.md)。
+   ポンプ設備の有無が分かると判定の精度が上がります
+3. **実際の冠水記録での較正** — 強い雨で判定が分かれない問題の本筋の解決
+   （[docs/04-7.5](docs/04_危険度判定ロジック.md)）
 
 → 詳細は [`tools/README.md`](tools/README.md) と [06_開発ロードマップ](docs/06_開発ロードマップ.md)
 

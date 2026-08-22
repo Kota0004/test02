@@ -70,6 +70,21 @@
   .maplibregl-popup-tip{border-top-color:var(--panel)!important;border-bottom-color:var(--panel)!important}
   .pill{display:inline-block;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700;color:#08111c}
   .kv{color:var(--muted)}
+  .alertbar{position:absolute;top:28px;left:0;right:0;z-index:19;display:none;
+    background:#7a1fa2;color:#fff;padding:9px 12px;text-align:center;font-size:13px;
+    line-height:1.5;border-bottom:1px solid #a93fd0}
+  .alertbar.show{display:block}
+  .alertbar b{font-size:14px}
+
+  .ranklist{display:flex;flex-direction:column;gap:4px;margin-top:8px}
+  .ranklist div{display:flex;gap:7px;font-size:12px;align-items:baseline;cursor:pointer;
+    padding:3px 5px;border-radius:5px}
+  .ranklist div:hover{background:var(--panel2)}
+  .ranklist .n{color:var(--muted);font-variant-numeric:tabular-nums;flex:none;width:16px}
+  .ranklist .s{margin-left:auto;color:var(--muted);font-variant-numeric:tabular-nums}
+  .unv{display:inline-block;font-size:10px;padding:1px 5px;border-radius:99px;
+    border:1px dashed #e8c33c;color:#e8c33c;margin-left:5px}
+
   .spot-label{display:none;font-size:11px;line-height:1.2;color:#e8eef7;white-space:nowrap;
     text-shadow:0 0 3px #0f1621,0 0 3px #0f1621,0 0 3px #0f1621;pointer-events:none;font-weight:600}
   #map.labels-on .spot-label{display:block}
@@ -93,9 +108,8 @@
 </head>
 <body>
 
-<div class="banner">
-  ⚠️ これは<b>設計検証用のプロトタイプ</b>です。表示している地点は<b>すべてダミーデータ</b>で、実在の危険箇所ではありません。実際の避難・通行判断には使わないでください。
-</div>
+<div class="banner" id="banner">読み込み中…</div>
+<div class="alertbar" id="extremeBar"></div>
 
 <div id="map"></div>
 
@@ -106,6 +120,10 @@
     <h2>① 降水量フィルタ（what-if）</h2>
     <div class="rainval"><span id="rainNum">50</span><span>mm/h（時間雨量）</span></div>
     <input type="range" id="rain" min="0" max="120" step="5" value="50">
+    <div class="row" style="margin:0 0 8px">
+      <button class="btn off" id="liveBtn" style="flex:1">🌧 いまの雨量を使う</button>
+    </div>
+    <p class="hint" id="liveStat" style="margin:0 0 8px;display:none"></p>
     <div class="presets">
       <button data-r="0">雨なし</button>
       <button data-r="30">30</button>
@@ -132,6 +150,9 @@
       </select>
     </div>
     <div class="legend" id="legend" style="margin-top:10px"></div>
+    <h2 style="margin-top:14px">危険な順</h2>
+    <div class="ranklist" id="rank"></div>
+    <p class="hint">同じレベルでも危険度には差があります。タップするとその地点へ移動します。</p>
   </div>
 
   <div class="sec">
@@ -169,7 +190,7 @@
   <div class="dis">※参考情報です。最終判断は現地の状況で行ってください。操作は停車してから。</div>
 </div>
 
-<div class="credit">出典: 地理院タイル（国土地理院）／ 気象庁</div>
+<div class="credit" id="credit">出典: 地理院タイル（国土地理院）／ 気象庁</div>
 
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script src="./risk.js"></script>
@@ -196,7 +217,7 @@
         { id:'gsi', type:'raster', source:'gsi', paint:{ 'raster-brightness-min':0.05, 'raster-saturation':-0.25 } }
       ]
     },
-    center: [140.11, 35.615], zoom: 11.2,
+    center: [140.20, 35.55], zoom: 8.6,
     // Shift＋クリックを「現在地の指定」に使うため、Shift ドラッグの矩形ズームは無効化する
     boxZoom: false
   });
@@ -206,6 +227,8 @@
 
   /* ---------- 状態 ---------- */
   let SPOTS = [];
+  let LIVE = null;        // 取り込み済みの実雨量（risk_latest.json）
+  let liveMode = false;
   let started = false;
   let rain = 50;
   let minLv = 2;
@@ -214,19 +237,68 @@
   const notified = new Map(); // spotId -> 最終通知時刻（クールダウン用）
   const COOLDOWN_MS = 60 * 60 * 1000; // docs/04-6
 
-  /* ---------- データ読み込み ---------- */
-  fetch('./data/sample_spots.json')
-    .then(r => { if(!r.ok) throw new Error(r.status); return r.json(); })
-    .then(d => {
-      SPOTS = d.spots.map(s => Object.assign({}, s, { t60: M.computeT60(s) }));
-      tryInit();
-    })
-    .catch(err => {
-      document.querySelector('.banner').innerHTML =
-        '❌ サンプルデータを読み込めませんでした（' + err.message + '）。' +
-        'ローカルファイルを直接開いた場合はブラウザに阻止されます。' +
-        '<b>prototype/ で <code>python3 -m http.server 8000</code> を実行し、http://localhost:8000/ を開いてください。</b>';
-    });
+  /* ---------- データ読み込み ----------
+     実データ（レビュー済みの千葉県）があればそれを使い、
+     無ければ動作確認用のサンプルにフォールバックする。 */
+  let META = null;
+
+  (async () => {
+    // 取得と解析だけを try で包む。初期化まで包むと、描画側の不具合を
+    // 「読み込み失敗」と誤認してサンプルに落ちてしまい、原因が見えなくなる。
+    let loaded = null;
+    for (const [url, isReal] of [['./data/spots_chiba.json', true],
+                                 ['./data/sample_spots.json', false]]) {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) continue;
+        const d = await res.json();
+        if (!d || !Array.isArray(d.spots) || !d.spots.length) continue;
+        loaded = { real: isReal, data: d };
+        break;
+      } catch (e) {
+        console.warn('読み込めませんでした:', url, e);
+      }
+    }
+    if (!loaded) {
+      document.getElementById('banner').innerHTML =
+        '❌ データを読み込めませんでした。ローカルファイルを直接開くとブラウザに阻止されます。'
+        + '<b>prototype/ で <code>python3 -m http.server 8000</code> を実行し、'
+        + 'http://localhost:8000/ を開いてください。</b>';
+      return;
+    }
+    // 取り込み済みの実雨量があれば読む（GitHub Actions が定期更新する）
+    try {
+      const r = await fetch('./data/risk_latest.json');
+      if (r.ok) {
+        const rd = await r.json();
+        if (rd && rd.spots) LIVE = rd;
+      }
+    } catch (e) { /* 無ければ what-if だけで動く */ }
+
+    META = Object.assign({ real: loaded.real }, loaded.data);
+    SPOTS = loaded.data.spots.map(s => Object.assign({}, s, { t60: s.t60 || M.computeT60(s) }));
+    window.mizumichiData = { meta: META, spots: SPOTS };   // デバッグ・テスト用
+    showBanner();
+    tryInit();
+  })();
+
+  function showBanner(){
+    const el = document.getElementById('banner');
+    if (!META.real) {
+      el.innerHTML = '⚠️ 動作確認用の<b>ダミーデータ</b>を表示しています。実在の危険箇所ではありません。';
+      return;
+    }
+    if (META.attribution && META.attribution.length) {
+      document.getElementById('credit').innerHTML =
+        '出典: 地理院タイル（国土地理院）／ 気象庁<br>'
+        + META.attribution.map(esc).join('<br>');
+    }
+    const c = META.counts || {};
+    el.innerHTML =
+      `📍 <b>${esc(META.area || '')}の道路冠水注意箇所 ${c.total || 0} 箇所</b>`
+      + `（位置を確認済み ${c.verified || 0} ／ <span class="unv">未確認 ${c.unverified || 0}</span>）`
+      + ' — 参考情報です。通行の可否を保証しません。最終判断は現地の状況で。';
+  }
 
   /* ---------- 初期化 ---------- */
   // 地図のスタイル読み込みとデータ取得は順序が保証されない。
@@ -258,7 +330,10 @@
       paint:{
         'circle-radius':['interpolate',['linear'],['zoom'],10,6,16,15],
         'circle-color':['get','color'],
-        'circle-stroke-width':1.5, 'circle-stroke-color':'#0f1621'
+        // 位置が人手で未確認の地点は、白い輪郭で区別する（確認済みと見分けられるように）
+        'circle-stroke-width':['case',['get','verified'],1.5,2.5],
+        'circle-stroke-color':['case',['get','verified'],'#0f1621','#e8c33c'],
+        'circle-opacity':['case',['get','verified'],1,0.75]
       }
     });
 
@@ -278,15 +353,71 @@
     map.on('zoom', updateLabelVisibility);
 
     buildLegend();
+    setupLive();
     refresh();
   }
 
+  /* データ由来の文字列をそのままHTMLに入れないためのエスケープ */
+  function esc(v){ return String(v ?? '').replace(/[&<>"]/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
   /* ---------- 危険度の再計算 ---------- */
   function evaluate(){
+    if (liveMode && LIVE) {
+      // 取り込み済みの結果をそのまま使う（サーバ側で計算した値）
+      return SPOTS.map(s => {
+        const v = LIVE.spots[s.id];
+        if (!v) return Object.assign({}, s, M.score(s, { r60: 0 }));
+        return Object.assign({}, s, {
+          score: v.score, level: v.level, reason: v.reason,
+          t60: v.t60 != null ? v.t60 : s.t60
+        });
+      });
+    }
     return SPOTS.map(s => {
       const r = M.score(s, { r60: rain });
       return Object.assign({}, s, r);
     });
+  }
+
+  /* ---------- いまの雨量モード ----------
+     鮮度は必ず出す。古い情報を最新と誤認させないため（docs/07）。 */
+  function setupLive(){
+    const btn = document.getElementById('liveBtn');
+    const stat = document.getElementById('liveStat');
+    if (!LIVE) {
+      btn.disabled = true;
+      btn.style.opacity = .5;
+      btn.textContent = '🌧 いまの雨量（未取得）';
+      stat.style.display = 'block';
+      stat.innerHTML = 'まだ雨量が取り込まれていません。'
+        + 'GitHub Actions が定期的に取得すると、ここで実際の雨量が使えるようになります。';
+      return;
+    }
+    btn.addEventListener('click', () => {
+      liveMode = !liveMode;
+      btn.classList.toggle('off', !liveMode);
+      btn.textContent = liveMode ? '🌧 いまの雨量を使用中（解除）' : '🌧 いまの雨量を使う';
+      document.getElementById('rain').disabled = liveMode;
+      document.querySelectorAll('.presets button').forEach(b => b.disabled = liveMode);
+      updateLiveStat();
+      refresh();
+    });
+    updateLiveStat();
+  }
+
+  function updateLiveStat(){
+    const stat = document.getElementById('liveStat');
+    if (!LIVE) return;
+    const t = new Date(LIVE.generated_at);
+    const mins = Math.round((Date.now() - t.getTime()) / 60000);
+    const stale = mins > 15;
+    stat.style.display = 'block';
+    stat.innerHTML =
+      `観測時刻 <b>${t.toLocaleString('ja-JP')}</b>（${mins}分前）`
+      + (stale ? '<br><b style="color:#e8c33c">⚠ 情報が最新ではありません。'
+                 + '参考程度にしてください。</b>' : '')
+      + (liveMode ? '' : '<br>ボタンを押すと、この雨量で判定します。');
   }
 
   function toGeoJSON(){
@@ -299,7 +430,7 @@
           type:'Feature',
           geometry:{ type:'Point', coordinates:[s.lon, s.lat] },
           properties:{
-            id:s.id, name:s.name, kind:s.kind,
+            id:s.id, name:s.name, kind:s.kind, verified: s.verified !== false,
             kindLabel: M.KIND_LABEL[s.kind] || s.kind,
             level:s.level, score:Math.round(s.score),
             color: M.LEVELS[s.level].color,
@@ -316,7 +447,50 @@
     if (src) src.setData(data);
     renderLabels(data);
     updateLegendCounts();
+    renderRank();
+    updateExtremeBar();
     if (here) checkProximity();
+  }
+
+  /* ---------- 危険な順 ----------
+     同じレベルでも危険度には差がある。レベルだけでは「どこを避けるか」を
+     決められないので、スコア順の上位を出して判断材料にする。 */
+  function renderRank(){
+    const top = evaluate().sort((a,b) => b.score - a.score).slice(0, 6);
+    const el = document.getElementById('rank');
+    el.innerHTML = top.map((s,i) => {
+      const lv = M.LEVELS[s.level];
+      return `<div data-id="${esc(s.id)}">
+        <span class="n">${i+1}</span>
+        <span class="sw" style="background:${lv.color};width:9px;height:9px"></span>
+        <span>${esc(s.name)}${s.verified === false ? '<span class="unv">未確認</span>' : ''}</span>
+        <span class="s">${Math.round(s.score)}</span></div>`;
+    }).join('');
+    el.querySelectorAll('div').forEach(row => row.addEventListener('click', () => {
+      const s = SPOTS.find(x => x.id === row.dataset.id);
+      if (s) map.flyTo({ center:[s.lon, s.lat], zoom: 15 });
+    }));
+  }
+
+  /* ---------- 全部が同じ判定になったときの伝え方 ----------
+     時間雨量が閾値をはるかに超えると、どの地点も同じレベルになる。
+     そこで「この道が危ない」と言い続けても選びようがないので、
+     「どの道も危ない＝運転を控える」に切り替えて伝える。 */
+  function updateExtremeBar(){
+    const ev = evaluate();
+    const bar = document.getElementById('extremeBar');
+    if (!ev.length) { bar.classList.remove('show'); return; }
+    const maxLv = Math.max(...ev.map(s => s.level));
+    const share = ev.filter(s => s.level === maxLv).length / ev.length;
+    if (maxLv >= 3 && share >= 0.9) {
+      bar.innerHTML =
+        `<b>${liveMode ? 'いまの雨' : '時間雨量 ' + rain + 'mm'}では、`
+        + `${Math.round(share*100)}% の地点が「${M.LEVELS[maxLv].name}」です。</b><br>`
+        + 'この雨量では避けられる道がほとんどありません。<b>運転を控えてください。</b>';
+      bar.classList.add('show');
+    } else {
+      bar.classList.remove('show');
+    }
   }
 
   /* ---------- 地点名ラベル ----------
@@ -360,7 +534,7 @@
     new maplibregl.Popup({ offset:14, maxWidth:'300px' })
       .setLngLat(lngLat)
       .setHTML(`
-        <h3>${p.name}</h3>
+        <h3>${p.name}${p.verified ? '' : '<span class="unv">位置は未確認</span>'}</h3>
         <div><span class="pill" style="background:${lv.color}">レベル${p.level} ${lv.name}</span>
              <span class="kv" style="margin-left:6px">スコア ${p.score}</span></div>
         <p style="margin:8px 0 6px">${lv.text}</p>
@@ -410,7 +584,9 @@
     document.getElementById('alertTtl').textContent =
       `${Math.round(s.dist/10)*10}m先　${M.KIND_LABEL[s.kind] || ''}`;
     document.getElementById('alertMsg').innerHTML =
-      `<b>${s.name}</b><br>${lv.text}<br><span style="opacity:.85">${s.reason}</span>`;
+      `<b>${s.name}</b>${s.verified === false
+          ? '<span class="unv">位置は未確認</span>' : ''}<br>`
+      + `${lv.text}<br><span style="opacity:.85">${s.reason}</span>`;
     el.classList.add('show');
 
     speak(`${Math.round(s.dist/100)*100}メートル先、${M.KIND_LABEL[s.kind]}。${lv.text}。`);
