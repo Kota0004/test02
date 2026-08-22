@@ -29,9 +29,43 @@ BBOXES = {
 TUNNELISH_RE = re.compile(r"(トンネル|隧道|立体)")
 DUP_M = 30.0
 IMPLAUSIBLE_DZ_M = 6.0
+# この距離以内にトンネル等があれば、大きな高低差は構造由来と判断する
+NEAR_STRUCTURE_M = 25.0
 
 problems: list[str] = []
 notes: list[str] = []
+
+
+def load_osm(path: str) -> list[dict]:
+    p = Path(path)
+    if not p.exists():
+        return []
+    try:
+        return json.loads(p.read_text(encoding="utf-8")).get("ways", [])
+    except (json.JSONDecodeError, OSError):
+        return []
+
+
+def explains_dz(spot: dict, ways: list[dict]) -> str:
+    """大きな高低差に構造上の理由があるか。
+
+    標高データは地表を測る。トンネル・掘割・ガード下では道路面ではなく
+    上の地形（山・築堤・跨線橋）の高さが出るので、大きな高低差は当然出る。
+    「近くにその構造物が実在するか」をOSMで確かめて、座標の誤りと切り分ける。
+    """
+    if TUNNELISH_RE.search(spot.get("name", "")):
+        return "名前がトンネル・立体"
+    if not ways or spot.get("lon") is None:
+        return ""
+    hit = geo.nearest_on_ways(spot["lon"], spot["lat"], ways, max_m=NEAR_STRUCTURE_M)
+    if not hit:
+        return ""
+    tags = hit["way"].get("tags") or {}
+    name = tags.get("name") or tags.get("ref") or "名前なし"
+    kind = ("道路トンネル" if tags.get("tunnel") not in (None, "no")
+            else "掘割・地下" if str(tags.get("layer", "")).startswith("-")
+            else "鉄道橋（ガード下）")
+    return f"{hit['distance_m']:.0f}m先に{kind}（{name}）"
 
 
 def head(t):
@@ -44,10 +78,19 @@ def main() -> int:
     ap.add_argument("--spots", required=True)
     ap.add_argument("--area", default="chiba")
     ap.add_argument("--rains", default="30,50,80,100", help="危険度を試算する時間雨量")
+    ap.add_argument("--osm", default="data/osm_underpasses.json",
+                    help="OSMのトンネル情報。あれば高低差の原因を切り分ける")
+    ap.add_argument("--annotate", action="store_true",
+                    help="見つかった疑いを spots に書き戻す（レビュー画面に表示される）")
     args = ap.parse_args()
 
-    S = json.loads(Path(args.spots).read_text(encoding="utf-8"))["spots"]
+    doc = json.loads(Path(args.spots).read_text(encoding="utf-8"))
+    S = doc["spots"]
     live = [x for x in S if (x.get("review") or {}).get("status") != "excluded"]
+    hints: dict[str, list[str]] = {}
+
+    def hint(spot, text):
+        hints.setdefault(spot["id"], []).append(text)
 
     head("レビューの進み具合")
     st = collections.Counter((x.get("review") or {}).get("status", "pending") for x in S)
@@ -84,6 +127,17 @@ def main() -> int:
     for a, b, dd in dups:
         mark = "★同じ座標" if dd < 1 else ""
         print(f"    {a['id']} {a['name'][:18]:<20} ↔ {b['id']} {b['name'][:18]:<20} {dd:>4.0f}m {mark}")
+        ra, rb = a.get("road", ""), b.get("road", "")
+        if ra and rb and ra != rb:
+            print(f"      路線が違う（{ra} / {rb}）。別の構造物のはずなので、"
+                  "どちらかの位置が誤っています")
+            hint(a, f"{b['name']}（路線 {rb}）と {dd:.0f}m しか離れていません。"
+                    f"こちらは路線 {ra} なので別の構造物のはずです")
+            hint(b, f"{a['name']}（路線 {ra}）と {dd:.0f}m しか離れていません。"
+                    f"こちらは路線 {rb} なので別の構造物のはずです")
+        else:
+            hint(a, f"{b['name']} と {dd:.0f}m しか離れていません")
+            hint(b, f"{a['name']} と {dd:.0f}m しか離れていません")
     if dups:
         problems.append(f"座標が重なる組が {len(dups)} 件あります。"
                         "別の構造物なら、どちらかの位置が誤っています")
@@ -95,23 +149,27 @@ def main() -> int:
         print(f"  窪地(<-1m) {sum(1 for v in dz if v < -1)} / "
               f"平坦(±1m) {sum(1 for v in dz if -1 <= v <= 1)} / "
               f"高い(>+1m) {sum(1 for v in dz if v > 1)} 件")
-    odd_real, odd_tunnel = [], []
+    ways = load_osm(args.osm)
+    odd_real, odd_ok = [], []
     for x in live:
         if abs(x.get("dz", 0)) <= IMPLAUSIBLE_DZ_M:
             continue
-        (odd_tunnel if TUNNELISH_RE.search(x.get("name", "")) else odd_real).append(x)
-    if odd_tunnel:
-        print(f"\n  高低差が大きいが構造上そうなるもの（トンネル・立体）: {len(odd_tunnel)} 件")
-        for x in odd_tunnel:
-            print(f"    {x['id']} {x['name'][:22]:<24} dz={x['dz']:+.2f}m")
-        notes.append("トンネル・立体は標高データが『上の地形』を測るため、"
-                     "大きな高低差が出ても座標の誤りとは限りません")
+        why = explains_dz(x, ways)
+        (odd_ok if why else odd_real).append((x, why))
+    if odd_ok:
+        print(f"\n  高低差が大きいが説明がつくもの: {len(odd_ok)} 件")
+        for x, why in odd_ok:
+            print(f"    {x['id']} {x['name'][:22]:<24} dz={x['dz']:+6.2f}m  ← {why}")
+        notes.append("トンネル・掘割・ガード下は、標高データが『上の地形』を測るため"
+                     "大きな高低差が出ます。座標の誤りとは限りません")
     if odd_real:
         print(f"\n  高低差が不自然（座標のずれを疑う）: {len(odd_real)} 件")
-        for x in odd_real:
-            print(f"    {x['id']} {x['name'][:22]:<24} dz={x['dz']:+.2f}m")
-        problems.append(f"高低差が不自然な地点が {len(odd_real)} 件（トンネル以外）。"
-                        "座標を確認してください")
+        for x, _ in odd_real:
+            print(f"    {x['id']} {x['name'][:22]:<24} dz={x['dz']:+6.2f}m"
+                  + ("  ← 近くにトンネル等が無い" if ways else ""))
+            hint(x, f"周囲との高低差が {x['dz']:+.1f}m と大きく、近くにトンネル等もありません。"
+                    "座標がずれている可能性があります")
+        problems.append(f"高低差が不自然な地点が {len(odd_real)} 件。座標を確認してください")
 
     head("種別の根拠")
     ks = collections.Counter(x.get("kind_source", "(記録なし)") for x in live)
@@ -158,6 +216,17 @@ def main() -> int:
         problems.append(
             f"時間雨量 {'/'.join(f'{v:.0f}' for v in flat)}mm で、全地点が同じレベルになります。"
             "その雨量では『どこが特に危ないか』を伝えられません（docs/04 の較正が必要）")
+
+    if args.annotate:
+        for x in S:
+            h = hints.get(x["id"])
+            if h:
+                x.setdefault("params", {})["check_hint"] = "／".join(h)
+            elif (x.get("params") or {}).pop("check_hint", None) is not None:
+                pass        # 解消したヒントは消す
+        Path(args.spots).write_text(json.dumps(doc, ensure_ascii=False, indent=2),
+                                    encoding="utf-8")
+        print(f"\n{len(hints)} 件に確認のヒントを書き込みました → {args.spots}")
 
     print("\n" + "=" * 52)
     if problems:

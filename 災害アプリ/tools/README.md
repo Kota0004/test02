@@ -71,6 +71,13 @@ python3 tools/enrich_dem.py --in data/spots_chiba.json --out data/spots_chiba.js
 # 9. ★点検：公開・配布の前に必ず通す
 python3 tools/validate_spots.py --spots data/spots_chiba.json
 
+# 見つかった疑いをデータに書き戻す（レビュー画面の「要確認」に出る）
+python3 tools/validate_spots.py --spots data/spots_chiba.json --annotate
+
+# 10. アプリが読む形に書き出す
+python3 tools/export_prototype_data.py --in data/spots_chiba.json \
+    --out prototype/data/spots_chiba.json
+
 # iPad / GitHub Codespaces から使う場合
 python3 tools/review_spots.py --spots data/spots_chiba.json --ipad
 ```

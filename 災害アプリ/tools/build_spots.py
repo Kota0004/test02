@@ -90,7 +90,17 @@ def build_address(rec: dict, pref: str) -> str:
     city = norm(rec.get("address", ""))
     locality = PAREN_RE.sub("", norm(rec.get("locality", ""))).strip()
     locality = CHISAKI_RE.sub("", locality)
-    addr = f"{city}{locality}"
+
+    # 地先名にすでに都道府県や市町村名が入っていることがある
+    # （実データに「千葉県松戸市小山」がそのまま入っていて、
+    #   市町村名を足した結果「千葉県松戸市千葉県松戸市小山」になった）
+    if locality.startswith(pref):
+        addr = locality
+    elif city and locality.startswith(city):
+        addr = locality
+    else:
+        addr = f"{city}{locality}"
+
     if addr and not re.match(r"^..[都道府県]", addr):
         addr = pref + addr
     return addr

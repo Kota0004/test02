@@ -125,6 +125,7 @@
     </header>
     <div class="filters">
       <button data-f="pending" class="on">未レビュー</button>
+      <button data-f="flagged">要確認</button>
       <button data-f="all">すべて</button>
     </div>
     <div id="list"></div>
@@ -167,6 +168,7 @@
           <label>過去の冠水回数 <input type="number" id="eHist" min="0" max="20" step="1"></label>
           <span class="meta" id="eCoord"></span>
         </div>
+        <div class="meta" id="checkHint" style="color:#ef4444;font-weight:600"></div>
         <div class="meta" id="snapInfo" style="color:#7dd3fc"></div>
         <div class="meta" id="dzWarn" style="color:#e8c33c"></div>
         <div id="saved"></div>
@@ -233,9 +235,13 @@
 
   function rebuild(keepId){
     const all = DATA.spots;
+    // 「要確認」は、点検（validate_spots.py）でヒントが付いた地点。
+    // 確認済みでも、あとから疑いが見つかることがあるので拾えるようにする。
     view = filter === 'pending'
       ? all.filter(s => (s.review && s.review.status) === 'pending')
-      : all.slice();
+      : filter === 'flagged'
+        ? all.filter(s => (s.params || {}).check_hint)
+        : all.slice();
     if (keepId) {
       const i = view.findIndex(s => s.id === keepId);
       if (i >= 0) idx = i;
@@ -250,9 +256,10 @@
     const el = document.getElementById('list');
     el.innerHTML = view.map((s, i) => {
       const st = (s.review && s.review.status) || 'pending';
+      const flag = (s.params || {}).check_hint ? ' ❗' : '';
       return `<div class="row ${i===idx?'sel':''}" data-i="${i}">
         <span class="dot ${st}"></span>
-        <span><span class="t">${esc(s.name || s.id)}</span><br>
+        <span><span class="t">${esc(s.name || s.id)}${flag}</span><br>
               <span class="a">${esc(s.address || s.road || '')}</span></span>
       </div>`;
     }).join('');
@@ -302,6 +309,10 @@
       : /既定値/.test(src)
         ? `<b style="color:#e8c33c">⚠ 種別は${esc(src)}</b>`
         : `（${esc(src)}）`;
+
+    // 点検で見つかった疑い。確認済みの地点にも出るようにする
+    const ch = (s.params || {}).check_hint;
+    document.getElementById('checkHint').innerHTML = ch ? `❗ ${esc(ch)}` : '';
 
     // 標高から見て座標がずれていそうな地点は目立たせる
     const warn = (s.params || {}).dz_warning;
