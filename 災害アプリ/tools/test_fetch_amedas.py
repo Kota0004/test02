@@ -4,6 +4,7 @@
     python3 tools/test_fetch_amedas.py
 """
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -80,6 +81,43 @@ def test_interpolation_and_risk(table, obs, ts):
     return res
 
 
+def test_table_cache():
+    """観測点表を毎回取りに行かない（気象庁への無駄な負荷を避ける）。"""
+    import time as _t
+
+    calls = []
+
+    class FakeSession:
+        def get(self, url, timeout=0):
+            calls.append(url)
+            class R:
+                text = json.dumps({"90001": {"lat": [35, 0], "lon": [140, 0], "kjName": "テスト"}})
+            return R()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        cache = Path(tmp) / "table.json"
+        src = fa.Source(None, table_cache=cache)
+        src.session = FakeSession()
+
+        src.table()
+        check("初回は取りに行く", len(calls) == 1, f"{len(calls)} 回")
+        check("キャッシュが作られる", cache.exists())
+
+        src.table()
+        check("2回目はキャッシュを使う（再取得しない）", len(calls) == 1, f"{len(calls)} 回")
+
+        # 期限切れは取り直す
+        old_time = _t.time() - (fa.TABLE_CACHE_DAYS + 1) * 86400
+        os.utime(cache, (old_time, old_time))
+        src.table()
+        check(f"{fa.TABLE_CACHE_DAYS}日を過ぎたら取り直す", len(calls) == 2, f"{len(calls)} 回")
+
+        # 壊れていたら取り直す
+        cache.write_text("{壊れたJSON", encoding="utf-8")
+        src.table()
+        check("キャッシュが壊れていたら取り直す", len(calls) == 3, f"{len(calls)} 回")
+
+
 def test_excluded_skipped():
     """レビューで除外した地点には危険度を出さない。"""
     spots = json.loads(SPOTS.read_text(encoding="utf-8"))["spots"]
@@ -115,6 +153,7 @@ def main():
     test_station_points(table)
     test_value_of(obs)
     res = test_interpolation_and_risk(table, obs, ts)
+    test_table_cache()
     test_excluded_skipped()
     test_cli()
 

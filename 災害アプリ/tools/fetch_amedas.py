@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -35,6 +36,9 @@ URLS = {
 }
 JST = timezone(timedelta(hours=9))
 
+# 観測点表をキャッシュしておく日数。観測点はめったに増減しない。
+TABLE_CACHE_DAYS = 7
+
 # 取り込む要素（キー → 内部名）。値は [観測値, 品質フラグ] の形で入っている。
 ELEMS = {
     "precipitation10m": "r10",
@@ -47,8 +51,9 @@ QUALITY_OK = {0}          # 0 以外は欠測・資料不足として扱う
 class Source:
     """通信あり／フィクスチャの切り替えを1か所に閉じ込める。"""
 
-    def __init__(self, fixture_dir: Path | None = None):
+    def __init__(self, fixture_dir: Path | None = None, table_cache: Path | None = None):
         self.fixture_dir = fixture_dir
+        self.table_cache = table_cache
         self.session = None
         if fixture_dir is None:
             import requests
@@ -67,9 +72,28 @@ class Source:
         return datetime.fromisoformat(raw.strip())
 
     def table(self) -> dict:
-        raw = (self._fixture("amedastable.json") if self.fixture_dir
-               else self.session.get(URLS["table"], timeout=60).text)
-        return json.loads(raw)
+        """観測点表。1MB近くあり、めったに変わらないのでキャッシュする。
+
+        毎回取りに行くと、気象庁のサーバに無駄な負荷をかけるうえ、
+        取り込み自体も遅くなる（10分ごとに動かす想定なので効いてくる）。
+        """
+        if self.fixture_dir:
+            return json.loads(self._fixture("amedastable.json"))
+
+        if self.table_cache and self.table_cache.exists():
+            age_days = (time.time() - self.table_cache.stat().st_mtime) / 86400
+            if age_days < TABLE_CACHE_DAYS:
+                try:
+                    return json.loads(self.table_cache.read_text(encoding="utf-8"))
+                except json.JSONDecodeError:
+                    pass        # 壊れていたら取り直す
+
+        raw = self.session.get(URLS["table"], timeout=60).text
+        data = json.loads(raw)          # 先に検証してから保存する
+        if self.table_cache:
+            self.table_cache.parent.mkdir(parents=True, exist_ok=True)
+            self.table_cache.write_text(raw, encoding="utf-8")
+        return data
 
     def observations(self, ts: datetime) -> dict:
         name = ts.strftime("%Y%m%d%H%M%S")
@@ -166,6 +190,8 @@ def main() -> int:
     ap.add_argument("--spots", required=True)
     ap.add_argument("--out", default="data/risk_latest.json")
     ap.add_argument("--fixture-dir", default=None, help="指定するとネットワークを使わない")
+    ap.add_argument("--table-cache", default="data/amedastable_cache.json",
+                    help=f"観測点表のキャッシュ先（{TABLE_CACHE_DAYS}日で取り直す）")
     ap.add_argument("--bbox", default="139.6,34.8,141.0,36.2",
                     help="観測点を絞る範囲 lon_min,lat_min,lon_max,lat_max（既定: 千葉県周辺）")
     ap.add_argument("--k", type=int, default=3, help="IDWで使う最寄り観測点の数")
@@ -173,7 +199,8 @@ def main() -> int:
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
 
-    src = Source(Path(args.fixture_dir) if args.fixture_dir else None)
+    src = Source(Path(args.fixture_dir) if args.fixture_dir else None,
+                 table_cache=Path(args.table_cache) if args.table_cache else None)
     spots = json.loads(Path(args.spots).read_text(encoding="utf-8"))["spots"]
 
     ts = src.latest_time()

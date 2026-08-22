@@ -8,6 +8,10 @@ name: 雨量と危険度を更新
 on:
   schedule:
     # 毎時0分（UTC基準・GitHubの都合で数分ずれることがある）
+    #
+    # ⚠️ GitHub は「60日間リポジトリに動きがない public リポジトリ」の
+    #    スケジュール実行を自動で止める。止まったら Actions のページから
+    #    手動で再開できる（下の keepalive ジョブが月1回コミットして予防する）。
     - cron: "0 * * * *"
   workflow_dispatch:        # 手動でも実行できる
 
@@ -30,6 +34,14 @@ jobs:
 
       - name: 依存を入れる
         run: pip install -r 災害アプリ/tools/requirements.txt
+
+      # 観測点表（約1MB）は毎回取りに行かない。気象庁への無駄な負荷を避ける。
+      - name: 観測点表のキャッシュ
+        uses: actions/cache@v4
+        with:
+          path: 災害アプリ/data/amedastable_cache.json
+          key: amedastable-${{ github.run_id }}
+          restore-keys: amedastable-
 
       - name: 雨量を取り込み危険度を計算する
         id: fetch
