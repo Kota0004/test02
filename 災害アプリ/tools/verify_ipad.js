@@ -7,6 +7,7 @@
  * 主要操作（プリセット・現在地アラート）を確認する。
  */
 const { chromium } = require('playwright');
+const { useLocalMaplibre } = require('./verify_support');
 const BASE = process.env.BASE_URL || 'http://127.0.0.1:8000';
 const ok = [], ng = [];
 const check = (n,c,e='') => (c?ok:ng).push(n + (e?` — ${e}`:''));
@@ -16,6 +17,7 @@ const check = (n,c,e='') => (c?ok:ng).push(n + (e?` — ${e}`:''));
     const ctx = await b.newContext({ viewport: vp, hasTouch: true, deviceScaleFactor: 2,
       permissions:['geolocation'], geolocation:{longitude:140.1080, latitude:35.6120} });
     const p = await ctx.newPage();
+    await useLocalMaplibre(p);
     const errs = []; p.on('pageerror', e => errs.push(e.message));
     await p.goto(`${BASE}/index.html`, { waitUntil:'load' });
     await p.waitForSelector('.cnt'); await p.waitForTimeout(700);

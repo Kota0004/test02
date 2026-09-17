@@ -88,6 +88,8 @@ jobs:
           fi
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add prototype/data/risk_latest.json
+          # .gitignore で除外してある（手元で作った架空の観測値を
+          # 誤って共有しないため）。ここは意図的な更新なので -f で入れる。
+          git add -f prototype/data/risk_latest.json
           git commit -m "危険度を更新（$n 地点で変化）"
           git push

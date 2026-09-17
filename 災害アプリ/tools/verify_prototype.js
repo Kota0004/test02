@@ -8,6 +8,7 @@
  * 地図タイルの取得失敗（ネットワーク由来）はエラーとして数えない。
  */
 const { chromium } = require('playwright');
+const { useLocalMaplibre } = require('./verify_support');
 const BASE = process.env.BASE_URL || 'http://127.0.0.1:8000';
 const ok = [], ng = [];
 const check = (name, cond, extra='') => (cond ? ok : ng).push(name + (extra ? ` — ${extra}` : ''));
@@ -23,6 +24,9 @@ const check = (name, cond, extra='') => (cond ? ok : ng).push(name + (extra ? ` 
     locale: 'ja-JP'
   });
   const page = await ctx.newPage();
+
+  await useLocalMaplibre(page);
+
   const jsErrors = [];
   page.on('pageerror', e => jsErrors.push(e.message));
   page.on('console', m => {
@@ -139,6 +143,9 @@ const check = (name, cond, extra='') => (cond ? ok : ng).push(name + (extra ? ` 
   await page.waitForTimeout(400);
 
   // --- T8: ナウキャストトグルはネットワーク失敗時に安全に倒れる ---
+  // 実際にネットワークを止めて確かめる。気象庁に繋がる環境でも繋がらない環境でも
+  // 同じ結果になるよう、Playwright 側で通信を遮断してから試す。
+  await page.route('**/www.jma.go.jp/**', route => route.abort('failed'));
   await page.check('#nowcast');
   await page.waitForTimeout(2500);
   const ncChecked = await page.isChecked('#nowcast');
@@ -147,6 +154,33 @@ const check = (name, cond, extra='') => (cond ? ok : ng).push(name + (extra ? ` 
         ncChecked === false && /取得できませんでした/.test(ncStat), ncStat.slice(0, 70));
   const stillWorks = (await counts()).reduce((a,b)=>a+b,0) === TOTAL;
   check('T8b ナウキャスト失敗後も本体機能が動作する', stillWorks);
+  await page.unroute('**/www.jma.go.jp/**');
+
+  // --- T8c: 取得できたときはレイヤが載る（気象庁への到達性に依らない） ---
+  // 基準時刻の応答を偽装するので、外に出られない環境でも成功側の道筋を確かめられる。
+  const FAKE_BASETIME = '20260101000000';
+  await page.route('**/targetTimes_N1.json', route => route.fulfill({
+    status: 200, contentType: 'application/json',
+    body: JSON.stringify([{ basetime: FAKE_BASETIME, validtime: FAKE_BASETIME }])
+  }));
+  // タイル画像そのものは 1x1 の透明 PNG を返す（地図の見た目は検証対象ではない）
+  const PIXEL = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+    'base64');
+  await page.route('**/hrpns/**', route => route.fulfill({
+    status: 200, contentType: 'image/png', body: PIXEL
+  }));
+  await page.check('#nowcast');
+  await page.waitForTimeout(2000);
+  const ncOk = await page.evaluate(() => !!window.mizumichiMap.getLayer('nowcast'));
+  const ncOkStat = (await page.textContent('#ncStat')).replace(/\s+/g,' ');
+  check('T8c ナウキャスト取得成功時にレイヤが載り、基準時刻が出る',
+        ncOk && await page.isChecked('#nowcast') && ncOkStat.includes(FAKE_BASETIME),
+        ncOkStat.slice(0, 70));
+  await page.uncheck('#nowcast');
+  await page.waitForTimeout(300);
+  await page.unroute('**/targetTimes_N1.json');
+  await page.unroute('**/hrpns/**');
 
   // --- T9: JSエラーなし ---
   check('T9 アプリ由来のJSエラーが発生していない', jsErrors.length === 0, jsErrors.slice(0,3).join(' | '));

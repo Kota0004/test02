@@ -20,9 +20,20 @@ npm i playwright && npx playwright install chromium
 ```bash
 cd 災害アプリ/prototype && python3 -m http.server 8000 &
 open http://localhost:8000/          # 手で触る
-node ../tools/verify_prototype.js    # 自動検証（13項目）
+node ../tools/verify_prototype.js    # 自動検証（14項目）
 node ../tools/verify_ipad.js         # iPadの画面・タッチでの検証（14項目）
 ```
+
+プロトタイプは MapLibre を CDN（unpkg）から読むので、外に出られない環境では
+地図が出ず検証が止まる。その場合は同じ版を手元に置いて読ませる:
+
+```bash
+cd 災害アプリ/tools && npm i maplibre-gl@4.7.1     # prototype/index.html と同じ版
+MAPLIBRE_DIR=$PWD/node_modules/maplibre-gl/dist node verify_prototype.js
+```
+
+`MAPLIBRE_DIR` を指定しなければ何もしないので、CDN に出られる環境（CI 含む）の
+挙動は変わらない。アプリ側は書き換えないため、検証しているのは本番と同じコード。
 
 ### ①' いまの状態を診断する
 
@@ -134,9 +145,10 @@ python3 tools/probe_endpoints.py --url https://pub.os-alert.info/chiba/devmap --
 | `test_fetch_amedas.py` | アメダスJSONの解釈（品質フラグ・[度,分]変換）、IDW内挿、危険度出力 |
 | `test_review_spots.py` | レビュー画面のサーバ側（保存・バックアップ・進捗集計・異常系・再開） |
 | `test_osm_snap.py` | 点と線分の距離、寄せ先の優先順位、上限、確認済みの保護、出典の記録 |
-| `verify_prototype.js` | ブラウザでの実動作13項目（雨量フィルタ・現在地アラート・クールダウン・ラベル・障害時の劣化動作） |
+| `verify_prototype.js` | ブラウザでの実動作14項目（雨量フィルタ・現在地アラート・クールダウン・ラベル・ナウキャストの成功/失敗） |
 | `verify_ipad.js` | iPad 横/縦でのはみ出し・タップ領域・主要操作 14項目 |
-| `verify_live.js` | 「いまの雨量」モード（鮮度表示・切替・取り込み値の反映）8項目 |
+| `verify_live.js` | 「いまの雨量」モード（鮮度表示・切替・取り込み値の反映）8項目。要 `risk_latest.json` |
+| `verify_support.js` | 検証スクリプトの共通処理（CDN に出られない環境で MapLibre を差し替える） |
 
 ## ファイル
 

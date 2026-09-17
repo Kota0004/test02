@@ -10,16 +10,27 @@
  * ※ フィクスチャは架空の観測値。確認が済んだらファイルを消すこと。
  */
 const { chromium } = require('playwright');
+const { useLocalMaplibre } = require('./verify_support');
 const BASE = process.env.BASE_URL || 'http://127.0.0.1:8000';
 const ok=[],ng=[]; const check=(n,c,e='')=>(c?ok:ng).push(n+(e?` — ${e}`:''));
 (async()=>{
   const b=await chromium.launch({executablePath: process.env.CHROMIUM_PATH || undefined});
   const p=await b.newPage({viewport:{width:1280,height:960}});
+  await useLocalMaplibre(p);
   const errs=[]; p.on('pageerror',e=>errs.push(e.message));
   p.on('console',m=>{const t=m.text();
     if(m.type()==='error'&&!/ERR_TUNNEL|Failed to fetch|Failed to load resource/.test(t))errs.push(t);});
   await p.goto(`${BASE}/index.html`,{waitUntil:'load'});
   await p.waitForSelector('.cnt'); await p.waitForTimeout(900);
+
+  // 雨量が未取込だとボタンは無効のまま。原因の分からないタイムアウトで
+  // 落ちるより、何が足りないかを言って終わる方がよい。
+  if (await p.isDisabled('#liveBtn')) {
+    console.log('検証できません: prototype/data/risk_latest.json がありません。');
+    console.log('冒頭のコメントにある fetch_amedas.py の手順で用意してください。');
+    await b.close();
+    process.exit(2);
+  }
 
   check('いまの雨量ボタンが有効になる', !(await p.isDisabled('#liveBtn')));
   const stat0 = await p.textContent('#liveStat');
