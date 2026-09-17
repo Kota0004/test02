@@ -294,6 +294,14 @@ def snap_one(spot: dict, ways: list[dict], max_move: float,
         tags = w.get("tags") or {}
         prio, label = categorize(tags)
         bonus, bonus_reason = name_bonus(spot_refs, spot_names, tags, spot_lines)
+        # 出発点が市区町村の中心しかない地点は、名前が一致しない候補へは寄せない。
+        #
+        # 区の中心からの「31m」には意味がない。実際、東京都の北町・赤塚・徳丸の
+        # 3つのアンダーパスは同じ区の中心から出発し、名前が合わないまま同じ
+        # トンネルへ31m寄って、別々の危険箇所が1点に潰れた。
+        # もっともらしい座標を作ってしまう分、寄せない方がまだ安全。
+        if coarse and bonus <= 0:
+            continue
         # 一致したものだけ遠くまで許す。減点されたものは通常の上限のまま
         limit = named_limit if bonus > 0 else min(max_move, max_move_unnamed)
         hit = geo.nearest_on_ways(spot["lon"], spot["lat"], [w], max_m=limit)

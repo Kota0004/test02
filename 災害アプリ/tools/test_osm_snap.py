@@ -396,6 +396,29 @@ def test_coarse_start():
           osm.snap_one(coarse, [far_other], max_move=300, max_move_unnamed=150,
                        coarse_max_move=3000) is None)
 
+    # 近くても寄せない。区の中心からの「31m」には意味がないため。
+    #
+    # 東京都の実データで、北町・赤塚・徳丸の3つのアンダーパスが同じ区の中心から
+    # 出発し、名前が合わないまま同じトンネルへ31m寄って1点に潰れた。
+    # 別々の危険箇所が同じ場所として表示されるのは、寄せないより悪い。
+    # 出発点（139.7100, 35.6800）のすぐ北、約33m
+    near_other = line(139.7098, 35.6803, 139.7102, 35.6803,
+                      highway="residential", tunnel="yes", name="無関係トンネル")
+    check("粗い出発点では、近くても名前が合わなければ寄せない",
+          osm.snap_one(coarse, [near_other], max_move=300, max_move_unnamed=150,
+                       coarse_max_move=3000) is None)
+    check("出発点が細かければ、近くて名前が合わなくても寄せる",
+          osm.snap_one(precise, [near_other], max_move=300, max_move_unnamed=150,
+                       coarse_max_move=3000) is not None)
+
+    # 同じ出発点の複数地点が1点に潰れないこと（上の事故そのもの）
+    trio = [dict(coarse, name=n) for n in ("北町アンダー", "赤塚アンダー", "徳丸アンダー")]
+    snapped = [osm.snap_one(t, [near_other], max_move=300, max_move_unnamed=150,
+                            coarse_max_move=3000) for t in trio]
+    check("同じ区の中心から出た複数地点が1点に潰れない",
+          all(r is None for r in snapped),
+          f"寄った件数 {sum(r is not None for r in snapped)}/3")
+
     # 0 を渡せば従来の挙動に戻せる
     check("coarse_max_move=0 なら従来どおり",
           osm.snap_one(coarse, [far], max_move=300, max_move_unnamed=150,
