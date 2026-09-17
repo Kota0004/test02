@@ -1,0 +1,73 @@
+# 試作アプリを GitHub Pages に公開する。
+#
+#   https://kota0004.github.io/test02/
+#
+# 公開するのは 災害アプリ/prototype/ の中身だけで、授業課題のファイルは載らない。
+name: アプリを公開
+
+on:
+  # 通常のコミット（人が push したとき）
+  push:
+    branches: [claude/github-file-org-report-docp9t]
+    paths:
+      - "災害アプリ/prototype/**"
+      - ".github/workflows/pages.yml"
+
+  # 毎時の危険度更新のあと。
+  #
+  # ⚠️ GITHUB_TOKEN による push は次のワークフローを起動しない仕様なので、
+  #    「雨量と危険度を更新」のコミットでは上の push が発火しない。
+  #    ワークフローの完了を合図にするこちらで拾う。
+  workflow_run:
+    workflows: ["雨量と危険度を更新"]
+    types: [completed]
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 公開中に次の更新が重なっても、最新のものが最後に残るようにする。
+# 進行中を打ち切らないのは、中途半端な状態で公開されるのを避けるため。
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # 更新が失敗した回はそのままなので公開しない
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # workflow_run では既定で「起動元のワークフローが動いた時点」の
+          # コミットになる。最新の危険度を載せたいので既定ブランチの先端を取る。
+          ref: claude/github-file-org-report-docp9t
+
+      - name: 公開するファイルを確かめる
+        run: |
+          cd 災害アプリ/prototype
+          test -f index.html   || { echo "index.html がない"; exit 1; }
+          test -f risk.js      || { echo "risk.js がない"; exit 1; }
+          test -f data/spots_chiba.json || { echo "危険箇所データがない"; exit 1; }
+          echo "公開するファイル:"
+          find . -type f | sort
+
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true      # Pages が未設定なら有効にする
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: 災害アプリ/prototype
+
+      - id: deploy
+        uses: actions/deploy-pages@v4
