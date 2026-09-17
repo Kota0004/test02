@@ -125,6 +125,7 @@
     </header>
     <div class="filters">
       <button data-f="pending" class="on">未レビュー</button>
+      <button data-f="flagged">要確認</button>
       <button data-f="all">すべて</button>
     </div>
     <div id="list"></div>
@@ -163,9 +164,13 @@
               <option value="river_adjacent">河川隣接</option>
             </select>
           </label>
+          <span class="meta" id="eKindSrc"></span>
           <label>過去の冠水回数 <input type="number" id="eHist" min="0" max="20" step="1"></label>
           <span class="meta" id="eCoord"></span>
         </div>
+        <div class="meta" id="checkHint" style="color:#ef4444;font-weight:600"></div>
+        <div class="meta" id="snapInfo" style="color:#7dd3fc"></div>
+        <div class="meta" id="dzWarn" style="color:#e8c33c"></div>
         <div id="saved"></div>
       </div>
       <div class="actions">
@@ -230,9 +235,13 @@
 
   function rebuild(keepId){
     const all = DATA.spots;
+    // 「要確認」は、点検（validate_spots.py）でヒントが付いた地点。
+    // 確認済みでも、あとから疑いが見つかることがあるので拾えるようにする。
     view = filter === 'pending'
       ? all.filter(s => (s.review && s.review.status) === 'pending')
-      : all.slice();
+      : filter === 'flagged'
+        ? all.filter(s => (s.params || {}).check_hint)
+        : all.slice();
     if (keepId) {
       const i = view.findIndex(s => s.id === keepId);
       if (i >= 0) idx = i;
@@ -247,9 +256,10 @@
     const el = document.getElementById('list');
     el.innerHTML = view.map((s, i) => {
       const st = (s.review && s.review.status) || 'pending';
+      const flag = (s.params || {}).check_hint ? ' ❗' : '';
       return `<div class="row ${i===idx?'sel':''}" data-i="${i}">
         <span class="dot ${st}"></span>
-        <span><span class="t">${esc(s.name || s.id)}</span><br>
+        <span><span class="t">${esc(s.name || s.id)}${flag}</span><br>
               <span class="a">${esc(s.address || s.road || '')}</span></span>
       </div>`;
     }).join('');
@@ -277,15 +287,63 @@
 
     document.getElementById('eName').textContent = s.name || s.id;
     const ev = s.evidence || {};
+    const conf = ev.confidence ?? 0;
+    const confColor = conf >= 0.8 ? '#22c55e' : conf >= 0.5 ? '#e8c33c' : '#ef4444';
     document.getElementById('eMeta').innerHTML = [
       s.address ? `住所: <b>${esc(s.address)}</b>` : '',
-      s.road ? `路線: ${esc(s.road)}` : '',
+      // 資料の原文（「五井（五井アンダーパス）」など）。現地を探す手がかりになる
+      s.locality && s.locality !== s.address ? `資料の記載: <b>${esc(s.locality)}</b>` : '',
+      s.road ? `路線: ${esc(s.road)}${s.road_type ? `（${esc(s.road_type)}）` : ''}` : '',
       `ID: ${esc(s.id)}`,
-      ev.source ? `出典: ${esc(ev.source)}` : '',
-      `機械判定の確からしさ: <b>${(ev.confidence ?? 0).toFixed(2)}</b>`
+      `機械判定の確からしさ: <b style="color:${confColor}">${conf.toFixed(2)}</b>`
+      + (ev.note ? `（${esc(ev.note)}）` : ''),
+      ev.source ? `出典: ${esc(ev.source)}` : ''
     ].filter(Boolean).join(' ／ ');
     document.getElementById('eKind').value = s.kind || 'lowland';
     document.getElementById('eHist').value = s.hist || 0;
+
+    // 種別が資料由来か既定値かを出す。既定値のまま放置されると閾値が実態と合わない
+    const src = s.kind_source || '';
+    const kindSrc = document.getElementById('eKindSrc');
+    kindSrc.innerHTML = !src ? ''
+      : /既定値/.test(src)
+        ? `<b style="color:#e8c33c">⚠ 種別は${esc(src)}</b>`
+        : `（${esc(src)}）`;
+
+    // 点検で見つかった疑い。確認済みの地点にも出るようにする
+    const ch = (s.params || {}).check_hint;
+    document.getElementById('checkHint').innerHTML = ch ? `❗ ${esc(ch)}` : '';
+
+    // 標高から見て座標がずれていそうな地点は目立たせる
+    const warn = (s.params || {}).dz_warning;
+    document.getElementById('dzWarn').innerHTML = warn
+      ? `⚠ ${esc(warn)}` : '';
+
+    // OSMのトンネルへ自動で寄せた地点は、その根拠を出す（確定ではないので確認が要る）
+    const snap = (s.params || {}).snap;
+    const hint = (s.params || {}).snap_hint;
+    const snapEl = document.getElementById('snapInfo');
+    if (!snap && hint) {
+      // 資料と違う路線しか無かったので動かしていない地点。探す手がかりを出す
+      snapEl.style.color = '#e8c33c';
+      snapEl.innerHTML = `⚠ <b>座標は自動調整していません</b> — 近くにあるのは`
+        + ` ${esc(hint.nearby)}（${Math.round(hint.distance_m)}m）だけで、資料の路線と違います。`
+        + ` <b>地図で資料の路線を探して合わせてください</b>`;
+    }
+    else if (!snap) { snapEl.innerHTML = ''; }
+    else {
+      // 確からしさで色を変える。「低」は重点的に見てほしい
+      const conf = snap.confidence || '中';
+      const col = conf === '高' ? '#22c55e' : conf === '低' ? '#ef4444' : '#7dd3fc';
+      snapEl.innerHTML =
+        `📍 OSMの<b>${esc(snap.matched)}</b>へ ${Math.round(snap.moved_m)}m 寄せた位置`
+        + (snap.osm_name ? `（${esc(snap.osm_name)}）` : '')
+        + ` <b style="color:${col}">確からしさ ${esc(conf)}</b>`
+        + (snap.why ? ` — ${esc(snap.why)}` : '')
+        + (snap.osm_id ? ` <a href="https://www.openstreetmap.org/way/${encodeURIComponent(snap.osm_id)}"
+             target="_blank" rel="noopener" style="color:var(--accent)">OSMで見る ↗</a>` : '');
+      snapEl.style.color = conf === '低' ? '#ef4444' : '#7dd3fc';
+    }
 
     const hasXY = s.lon != null && s.lat != null;
     const pos = hasXY ? [s.lon, s.lat] : CENTER_FALLBACK;
@@ -340,7 +398,10 @@
 
   document.getElementById('eKind').addEventListener('change', e => {
     const s = current(); if (!s) return;
-    s.kind = e.target.value; save(s, null);
+    s.kind = e.target.value;
+    s.kind_source = '人手で確認';
+    document.getElementById('eKindSrc').innerHTML = '（人手で確認）';
+    save(s, null);
   });
   document.getElementById('eHist').addEventListener('change', e => {
     const s = current(); if (!s) return;
@@ -352,7 +413,8 @@
     fetch('/api/spot', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ id:s.id, lon:s.lon, lat:s.lat, kind:s.kind,
-                             hist:s.hist, status: status || undefined })
+                             kind_source:s.kind_source, hist:s.hist,
+                             status: status || undefined })
     }).then(r => r.json()).then(() => {
       flash(status === 'ok' ? '✓ 確認済みとして保存しました'
           : status === 'excluded' ? '✓ 除外として保存しました' : '✓ 保存しました');

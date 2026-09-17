@@ -6,7 +6,8 @@ cd "$(dirname "$0")/.."
 
 fail=0
 for t in tools/test_risk_parity.py tools/test_build_spots.py tools/test_enrich_dem.py \
-         tools/test_fetch_amedas.py tools/test_review_spots.py; do
+         tools/test_fetch_amedas.py tools/test_review_spots.py \
+         tools/test_osm_snap.py; do
   echo
   echo "########## $t ##########"
   python3 "$t" || fail=1

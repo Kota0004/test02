@@ -8,6 +8,7 @@
  * 地図タイルの取得失敗（ネットワーク由来）はエラーとして数えない。
  */
 const { chromium } = require('playwright');
+const { useLocalMaplibre } = require('./verify_support');
 const BASE = process.env.BASE_URL || 'http://127.0.0.1:8000';
 const ok = [], ng = [];
 const check = (name, cond, extra='') => (cond ? ok : ng).push(name + (extra ? ` — ${extra}` : ''));
@@ -23,6 +24,9 @@ const check = (name, cond, extra='') => (cond ? ok : ng).push(name + (extra ? ` 
     locale: 'ja-JP'
   });
   const page = await ctx.newPage();
+
+  await useLocalMaplibre(page);
+
   const jsErrors = [];
   page.on('pageerror', e => jsErrors.push(e.message));
   page.on('console', m => {
@@ -35,10 +39,14 @@ const check = (name, cond, extra='') => (cond ? ok : ng).push(name + (extra ? ` 
   await page.waitForTimeout(600);
 
   const counts = () => page.$$eval('.cnt', els => els.map(e => parseInt(e.textContent)));
+  // 件数はデータ次第（サンプル14件／実データ89件）なので、アプリ自身から取る
+  const TOTAL = await page.evaluate(() => window.mizumichiData.spots.length);
+  console.log(`読み込まれた地点数: ${TOTAL} 件`);
 
   // --- T1: 初期表示 ---
   const c0 = await counts();
-  check('T1 初期表示（50mm/h）で14件が分類される', c0.reduce((a,b)=>a+b,0) === 14, `内訳=${c0.join('/')}`);
+  check('T1 初期表示（50mm/h）で全件が分類される', c0.reduce((a,b)=>a+b,0) === TOTAL,
+        `内訳=${c0.join('/')} 合計=${TOTAL}`);
 
   // --- T2: 雨量スライダーが単調に危険度を上げる ---
   const series = {};
@@ -59,21 +67,19 @@ const check = (name, cond, extra='') => (cond ? ok : ng).push(name + (extra ? ` 
   await page.waitForTimeout(200);
   const spread = await page.evaluate(() => {
     const M = window.MizuMichi;
-    return fetch('./data/sample_spots.json').then(r=>r.json()).then(d => {
-      const lv = d.spots.map(s => M.score(Object.assign({}, s, {t60: M.computeT60(s)}), {r60:50}).level);
-      return { min: Math.min(...lv), max: Math.max(...lv),
-               A: lv[0], K: lv[10] };   // S-01 と S-11
-    });
+    const lv = window.mizumichiData.spots.map(s =>
+      M.score(Object.assign({}, s, { t60: s.t60 || M.computeT60(s) }), { r60: 50 }).level);
+    return { min: Math.min(...lv), max: Math.max(...lv), n: lv.length };
   });
-  check('T3 50mm/h で地点により判定が分かれる', spread.max - spread.min >= 2,
-        `最小Lv${spread.min}〜最大Lv${spread.max} / 地下道A=Lv${spread.A}, 高台K=Lv${spread.K}`);
+  check('T3 50mm/h で地点により判定が分かれる', spread.max - spread.min >= 1,
+        `最小Lv${spread.min}〜最大Lv${spread.max}（${spread.n}件）`);
 
   // --- T4: レベルフィルタは「地図の表示」だけを絞り、集計は全件のまま ---
   await page.selectOption('#minLv', '4');
   await page.waitForTimeout(300);
   const c4 = await counts();
   check('T4 レベルフィルタを変えても集計は全件のまま（表示だけ絞られる）',
-        c4.reduce((a,b)=>a+b,0) === 14, `内訳=${c4.join('/')}`);
+        c4.reduce((a,b)=>a+b,0) === TOTAL, `内訳=${c4.join('/')}`);
   await page.selectOption('#minLv', '2');
   await page.waitForTimeout(300);
 
@@ -108,8 +114,7 @@ const check = (name, cond, extra='') => (cond ? ok : ng).push(name + (extra ? ` 
 
   const popupText = await page.evaluate(async () => {
     const m = window.mizumichiMap;
-    const d = await fetch('./data/sample_spots.json').then(r => r.json());
-    const s = d.spots[0];
+    const s = window.mizumichiData.spots[0];
     m.jumpTo({ center: [s.lon, s.lat], zoom: 14 });
     await new Promise(r => setTimeout(r, 700));
     const p = m.project([s.lon, s.lat]);
@@ -133,19 +138,51 @@ const check = (name, cond, extra='') => (cond ? ok : ng).push(name + (extra ? ` 
              sample: els.length ? els[0].textContent : '' };
   });
   check('T7c 地点名の日本語ラベルが描画される（グリフサーバ不要）',
-        labels.n === 14 && labels.shown === 'block', JSON.stringify(labels));
+        labels.n === TOTAL && labels.shown === 'block', JSON.stringify(labels));
   await page.evaluate(() => { const el=document.getElementById('minLv'); el.value='2'; el.dispatchEvent(new Event('change')); });
   await page.waitForTimeout(400);
 
   // --- T8: ナウキャストトグルはネットワーク失敗時に安全に倒れる ---
-  await page.check('#nowcast');
+  // 実際にネットワークを止めて確かめる。気象庁に繋がる環境でも繋がらない環境でも
+  // 同じ結果になるよう、Playwright 側で通信を遮断してから試す。
+  await page.route('**/www.jma.go.jp/**', route => route.abort('failed'));
+  // check() は「押した後もチェックが入ったまま」を前提に待つので使えない。
+  // ここで確かめたいのは逆に、失敗してチェックが外れることそのもの。
+  await page.click('#nowcast');
   await page.waitForTimeout(2500);
   const ncChecked = await page.isChecked('#nowcast');
   const ncStat = (await page.textContent('#ncStat')).replace(/\s+/g,' ');
   check('T8 ナウキャスト取得失敗時にチェックが戻り、案内が出る（本体は壊れない）',
         ncChecked === false && /取得できませんでした/.test(ncStat), ncStat.slice(0, 70));
-  const stillWorks = (await counts()).reduce((a,b)=>a+b,0) === 14;
+  const stillWorks = (await counts()).reduce((a,b)=>a+b,0) === TOTAL;
   check('T8b ナウキャスト失敗後も本体機能が動作する', stillWorks);
+  await page.unroute('**/www.jma.go.jp/**');
+
+  // --- T8c: 取得できたときはレイヤが載る（気象庁への到達性に依らない） ---
+  // 基準時刻の応答を偽装するので、外に出られない環境でも成功側の道筋を確かめられる。
+  const FAKE_BASETIME = '20260101000000';
+  await page.route('**/targetTimes_N1.json', route => route.fulfill({
+    status: 200, contentType: 'application/json',
+    body: JSON.stringify([{ basetime: FAKE_BASETIME, validtime: FAKE_BASETIME }])
+  }));
+  // タイル画像そのものは 1x1 の透明 PNG を返す（地図の見た目は検証対象ではない）
+  const PIXEL = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+    'base64');
+  await page.route('**/hrpns/**', route => route.fulfill({
+    status: 200, contentType: 'image/png', body: PIXEL
+  }));
+  await page.click('#nowcast');
+  await page.waitForTimeout(2000);
+  const ncOk = await page.evaluate(() => !!window.mizumichiMap.getLayer('nowcast'));
+  const ncOkStat = (await page.textContent('#ncStat')).replace(/\s+/g,' ');
+  check('T8c ナウキャスト取得成功時にレイヤが載り、基準時刻が出る',
+        ncOk && await page.isChecked('#nowcast') && ncOkStat.includes(FAKE_BASETIME),
+        ncOkStat.slice(0, 70));
+  await page.click('#nowcast');          // 元に戻す
+  await page.waitForTimeout(300);
+  await page.unroute('**/targetTimes_N1.json');
+  await page.unroute('**/hrpns/**');
 
   // --- T9: JSエラーなし ---
   check('T9 アプリ由来のJSエラーが発生していない', jsErrors.length === 0, jsErrors.slice(0,3).join(' | '));

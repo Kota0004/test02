@@ -20,9 +20,20 @@ npm i playwright && npx playwright install chromium
 ```bash
 cd 災害アプリ/prototype && python3 -m http.server 8000 &
 open http://localhost:8000/          # 手で触る
-node ../tools/verify_prototype.js    # 自動検証（13項目）
+node ../tools/verify_prototype.js    # 自動検証（14項目）
 node ../tools/verify_ipad.js         # iPadの画面・タッチでの検証（14項目）
 ```
+
+プロトタイプは MapLibre を CDN（unpkg）から読むので、外に出られない環境では
+地図が出ず検証が止まる。その場合は同じ版を手元に置いて読ませる:
+
+```bash
+cd 災害アプリ/tools && npm i maplibre-gl@4.7.1     # prototype/index.html と同じ版
+MAPLIBRE_DIR=$PWD/node_modules/maplibre-gl/dist node verify_prototype.js
+```
+
+`MAPLIBRE_DIR` を指定しなければ何もしないので、CDN に出られる環境（CI 含む）の
+挙動は変わらない。アプリ側は書き換えないため、検証しているのは本番と同じコード。
 
 ### ①' いまの状態を診断する
 
@@ -50,15 +61,45 @@ python3 tools/build_spots.py --pdf 一覧表.pdf --area chiba \
     --source "国交省千葉国道事務所 道路冠水箇所マップ（2026-06-30版）" \
     --out data/spots_chiba.json
 
-# 5. 標高タイルから相対標高 dz を付けて閾値を補正できるようにする
+# 5. 標高タイルから相対標高 dz を付ける（この時点では目安。レビュー後にやり直す）
 python3 tools/enrich_dem.py --in data/spots_chiba.json --out data/spots_chiba.json
 
-# 6. ★人手レビュー：地図上で座標を確認・修正する（その場でJSONに保存される）
+# 6. OSMのトンネル情報へ座標を自動で寄せる（レビューの出発点を良くする）
+python3 tools/osm_snap.py --spots data/spots_chiba.json --fetch
+python3 tools/osm_snap.py --spots data/spots_chiba.json --dry-run   # 確認
+python3 tools/osm_snap.py --spots data/spots_chiba.json --apply     # 反映
+
+# 上限は名前の一致有無で分けている（既定: 一致300m / 不一致150m）。
+# 「見つからない」を減らしたい場合は緩められるが、誤った位置に置く危険が増える
+python3 tools/osm_snap.py --spots data/spots_chiba.json --dry-run --max-move-unnamed 250
+
+# 7. ★人手レビュー：地図上で座標を確認・修正する（その場でJSONに保存される）
 python3 tools/review_spots.py --spots data/spots_chiba.json
+
+# 8. 座標が正しくなったので dz を計算し直す
+python3 tools/enrich_dem.py --in data/spots_chiba.json --out data/spots_chiba.json
+
+# 9. ★点検：公開・配布の前に必ず通す
+python3 tools/validate_spots.py --spots data/spots_chiba.json
+
+# 見つかった疑いをデータに書き戻す（レビュー画面の「要確認」に出る）
+python3 tools/validate_spots.py --spots data/spots_chiba.json --annotate
+
+# 10. アプリが読む形に書き出す
+python3 tools/export_prototype_data.py --in data/spots_chiba.json \
+    --out prototype/data/spots_chiba.json
 
 # iPad / GitHub Codespaces から使う場合
 python3 tools/review_spots.py --spots data/spots_chiba.json --ipad
 ```
+
+`validate_spots.py` は、座標の範囲・重複・レビューの進み具合・閾値の分布・
+危険度の出方をまとめて調べ、**対応が必要なものだけ**を挙げる。
+「誤った地点を危険と表示する」ことを防ぐ最後の関門（docs/07）。
+
+**dz は座標から計算するので、レビューの前後で2回実行する。** レビュー前の値は目安に過ぎず、
+座標が丁目の中心にあるまま測った高低差には意味がない。
+周囲100mとの高低差が ±6m を超える地点は「座標がずれている疑い」として警告する。
 
 **レビューは省略しない。** 住所からの機械変換は丁目レベルで外れることがあり、
 誤った地点を「危険」と表示するのは見逃しとは別種の害になる（docs/07）。
@@ -103,8 +144,11 @@ python3 tools/probe_endpoints.py --url https://pub.os-alert.info/chiba/devmap --
 | `test_enrich_dem.py` | 標高タイルのRGBデコード（往復・無効値）、相対標高 dz の算出、dz が閾値に効くこと |
 | `test_fetch_amedas.py` | アメダスJSONの解釈（品質フラグ・[度,分]変換）、IDW内挿、危険度出力 |
 | `test_review_spots.py` | レビュー画面のサーバ側（保存・バックアップ・進捗集計・異常系・再開） |
-| `verify_prototype.js` | ブラウザでの実動作13項目（雨量フィルタ・現在地アラート・クールダウン・ラベル・障害時の劣化動作） |
+| `test_osm_snap.py` | 点と線分の距離、寄せ先の優先順位、上限、確認済みの保護、出典の記録 |
+| `verify_prototype.js` | ブラウザでの実動作14項目（雨量フィルタ・現在地アラート・クールダウン・ラベル・ナウキャストの成功/失敗） |
 | `verify_ipad.js` | iPad 横/縦でのはみ出し・タップ領域・主要操作 14項目 |
+| `verify_live.js` | 「いまの雨量」モード（鮮度表示・切替・取り込み値の反映）8項目。要 `risk_latest.json` |
+| `verify_support.js` | 検証スクリプトの共通処理（CDN に出られない環境で MapLibre を差し替える） |
 
 ## ファイル
 
@@ -114,6 +158,9 @@ python3 tools/probe_endpoints.py --url https://pub.os-alert.info/chiba/devmap --
 | `geo.py` | タイル座標変換、標高タイルのデコード、IDW内挿 |
 | `build_spots.py` | ② 一覧PDF → 座標付き spots JSON + レビュー用CSV |
 | `enrich_dem.py` | ② 標高タイルから相対標高 dz を付与 |
+| `osm_snap.py` | ② OSMのトンネル情報へ座標を寄せる（住所検索では構造物を指せないため） |
+| `validate_spots.py` | ② データの点検（座標・重複・レビュー状況・閾値と危険度の分布） |
+| `export_prototype_data.py` | レビュー済みデータをアプリが読む形に書き出す（除外を省き、未確認に印を付ける） |
 | `fetch_amedas.py` | ③ アメダス10分値 → 各地点の雨量と危険度 |
 | `probe_endpoints.py` | ④ 公開ページのデータ取得口を調査 |
 | `review_spots.py` / `.html` | ② 座標を地図上で確認・修正するレビュー画面（ローカルサーバ） |
