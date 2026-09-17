@@ -8,7 +8,7 @@
  * 地図タイルの取得失敗（ネットワーク由来）はエラーとして数えない。
  */
 const { chromium } = require('playwright');
-const { useLocalMaplibre } = require('./verify_support');
+const { useLocalMaplibre, positionNearAlertableSpot } = require('./verify_support');
 const BASE = process.env.BASE_URL || 'http://127.0.0.1:8000';
 const ok = [], ng = [];
 const check = (name, cond, extra='') => (cond ? ok : ng).push(name + (extra ? ` — ${extra}` : ''));
@@ -20,7 +20,7 @@ const check = (name, cond, extra='') => (cond ? ok : ng).push(name + (extra ? ` 
   const ctx = await browser.newContext({
     viewport: { width: 1280, height: 860 },
     permissions: ['geolocation'],
-    geolocation: { longitude: 140.1080, latitude: 35.6120 },   // サンプル地下道A のすぐ近く
+    geolocation: { longitude: 140.1080, latitude: 35.6120 },   // 読み込み後にデータから決め直す
     locale: 'ja-JP'
   });
   const page = await ctx.newPage();
@@ -37,6 +37,12 @@ const check = (name, cond, extra='') => (cond ? ok : ng).push(name + (extra ? ` 
   await page.goto(`${BASE}/index.html`, { waitUntil: 'load' });
   await page.waitForSelector('.cnt', { timeout: 10000 });
   await page.waitForTimeout(600);
+
+  // 現在地は、実際にアラート対象にできる地点の200m手前に置く。
+  // 座標を決め打ちにすると、取り込み直しで地点が少し動いただけで落ちる。
+  const home = await positionNearAlertableSpot(page, 200);
+  await ctx.setGeolocation({ longitude: home.longitude, latitude: home.latitude });
+  console.log(`現在地の基準: ${home.spot.id} ${home.spot.name} の200m手前`);
 
   const counts = () => page.$$eval('.cnt', els => els.map(e => parseInt(e.textContent)));
   // 件数はデータ次第（サンプル14件／実データ89件）なので、アプリ自身から取る
@@ -98,7 +104,8 @@ const check = (name, cond, extra='') => (cond ? ok : ng).push(name + (extra ? ` 
   await page.click('#alertClose');
   await page.waitForTimeout(200);
   // 位置をわずかに動かして再判定を走らせる（radius は変えない＝notified は保持される）
-  await ctx.setGeolocation({ longitude: 140.1082, latitude: 35.6122 });
+  await ctx.setGeolocation({ longitude: home.longitude + 0.0002,
+                             latitude: home.latitude + 0.0002 });
   await page.waitForTimeout(1500);
   const reshown = await page.evaluate(() => document.getElementById('alert').classList.contains('show'));
   check('T6 同一地点はクールダウン中に再通知されない', reshown === false, `再表示=${reshown}`);
