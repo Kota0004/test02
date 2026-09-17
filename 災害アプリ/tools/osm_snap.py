@@ -60,11 +60,21 @@ def build_query(bbox: tuple[float, float, float, float], timeout: int = 180) -> 
     return f"[out:json][timeout:{timeout}];\n(\n  {parts}\n);\nout geom;"
 
 
-def spots_bbox(spots: list[dict], margin_deg: float = 0.01) -> tuple[float, float, float, float]:
+def spots_bbox(spots: list[dict], margin_deg: float = 0.01,
+               coarse_max_move: float = 0.0) -> tuple[float, float, float, float]:
+    """取得範囲。出発点が粗い地点があれば、寄せ先が入るまで広げる。
+
+    区の中心から最大3km寄せる可能性があるのに、取得範囲が1kmしかないと
+    寄せ先がそもそも取れず、黙って「寄せられなかった」になってしまう。
+    """
     lons = [s["lon"] for s in spots if s.get("lon") is not None]
     lats = [s["lat"] for s in spots if s.get("lat") is not None]
     if not lons:
         raise SystemExit("座標のある地点がありません。先に build_spots.py を実行してください。")
+    if coarse_max_move and any(is_coarse(s) for s in spots):
+        # 緯度1度 ≒ 111km。経度は緯度が上がるほど詰まるが、
+        # 範囲は広めに取る方が安全なので緯度基準でそろえる。
+        margin_deg = max(margin_deg, coarse_max_move / 111_000.0)
     return (min(lats) - margin_deg, min(lons) - margin_deg,
             max(lats) + margin_deg, max(lons) + margin_deg)
 
@@ -127,6 +137,14 @@ PRIO_PENALTY_M = 60.0
 # 路線名・通称が一致したときの「割引」[m]。名前が合う線は多少遠くても本命に近い。
 REF_BONUS_M = 150.0     # 路線番号の一致（国道356号 ↔ ref=356）
 NAME_BONUS_M = 120.0    # 名称の一致（新港穴川線 ↔ name に「新港穴川」）
+
+# 出発点が市区町村の中心しかない地点は、上の上限では届かない。
+# 東京都のPDFは「地先名又は通称名」が住所ではなく構造物名（「本町アンダー」など）で、
+# ジオコーディングが区の中心に落ちるため、本来の位置まで数kmあることがある。
+# 区の中心は位置として意味を持たないので、名称が一致する候補に限り遠くまで許す。
+COARSE_MAX_MOVE_M = 3000.0
+# この確からしさ以下なら「出発点が粗い」とみなす（build_spots の confidence）
+COARSE_CONF = 0.45
 
 REF_RE = re.compile(r"(?:国道|県道|市道|町道|村道|主要地方道)?\s*(\d{1,4})\s*号")
 
@@ -233,8 +251,22 @@ def name_bonus(spot_refs: set[str], spot_names: set[str], tags: dict,
     return 0.0, ""
 
 
+def is_coarse(spot: dict) -> bool:
+    """出発点が市区町村・町名どまりで、位置として当てにならないか。
+
+    ここが真なら、名称が一致する候補に限って遠くまで寄せることを許す。
+    区の中心から動かさないでおくより、名前の合う構造物へ寄せた方が近い。
+    """
+    ev = spot.get("evidence") or {}
+    conf = ev.get("confidence")
+    if isinstance(conf, (int, float)) and conf <= COARSE_CONF:
+        return True
+    return "市区町村" in str(ev.get("note", ""))
+
+
 def snap_one(spot: dict, ways: list[dict], max_move: float,
-             max_move_unnamed: float | None = None) -> dict | None:
+             max_move_unnamed: float | None = None,
+             coarse_max_move: float | None = None) -> dict | None:
     """最も「もっともらしい」線へ寄せる。
 
     単純な最短距離ではなく、種類のペナルティを足した距離で比べる。
@@ -251,14 +283,42 @@ def snap_one(spot: dict, ways: list[dict], max_move: float,
     spot_lines = line_cores(spot.get("name", "")) | line_cores(spot.get("locality", ""))
     if max_move_unnamed is None:
         max_move_unnamed = max_move
+    # 出発点が粗いときだけ、名称が一致する候補への上限を広げる
+    named_limit = max_move
+    coarse = is_coarse(spot)
+    if coarse and coarse_max_move:
+        named_limit = max(max_move, coarse_max_move)
+
+    # 出発点が粗いときは、名前の合う候補が1つに絞れたときだけ寄せる。
+    # 「本町アンダー」のような通称名は部分一致しやすく、候補が複数あるときに
+    # そのうちの1つを選ぶ根拠が無い。区の中心から2.9km動かすなら、
+    # それが唯一の候補であることが最低条件。
+    if coarse:
+        matched_ids = set()
+        for w in ways:
+            tags = w.get("tags") or {}
+            b, _ = name_bonus(spot_refs, spot_names, tags, spot_lines)
+            if b > 0 and geo.nearest_on_ways(spot["lon"], spot["lat"], [w],
+                                             max_m=named_limit):
+                matched_ids.add(w.get("id"))
+        if len(matched_ids) != 1:
+            return None
 
     best = None
     for w in ways:
         tags = w.get("tags") or {}
         prio, label = categorize(tags)
         bonus, bonus_reason = name_bonus(spot_refs, spot_names, tags, spot_lines)
+        # 出発点が市区町村の中心しかない地点は、名前が一致しない候補へは寄せない。
+        #
+        # 区の中心からの「31m」には意味がない。実際、東京都の北町・赤塚・徳丸の
+        # 3つのアンダーパスは同じ区の中心から出発し、名前が合わないまま同じ
+        # トンネルへ31m寄って、別々の危険箇所が1点に潰れた。
+        # もっともらしい座標を作ってしまう分、寄せない方がまだ安全。
+        if coarse and bonus <= 0:
+            continue
         # 一致したものだけ遠くまで許す。減点されたものは通常の上限のまま
-        limit = max_move if bonus > 0 else min(max_move, max_move_unnamed)
+        limit = named_limit if bonus > 0 else min(max_move, max_move_unnamed)
         hit = geo.nearest_on_ways(spot["lon"], spot["lat"], [w], max_m=limit)
         if not hit:
             continue
@@ -278,6 +338,7 @@ def snap_one(spot: dict, ways: list[dict], max_move: float,
             }
     if best:
         best.pop("effective")
+        best["from_coarse"] = coarse and best["distance_m"] > max_move
         best["snap_confidence"], best["why"] = snap_confidence(best)
     return best
 
@@ -293,6 +354,12 @@ def snap_confidence(res: dict) -> tuple[str, str]:
         return "低", (f"{res['conflict_note']}なのに、別の路線（{res['osm_name']}）"
                       "しか近くにありません")
     if res["name_match"]:
+        # 出発点が市区町村の中心しかなかった場合、名前が合っていても
+        # 同名の別構造物を掴んでいる可能性が残る。断定せず目視に回す。
+        if res.get("from_coarse"):
+            return "中", (f"{res['name_match']}。ただし出発点が市区町村の中心で、"
+                          f"そこから {res['distance_m']:.0f}m 寄せています。"
+                          "同名の別の構造物でないか確認してください")
         if res["distance_m"] > 200:
             return "高", (f"{res['name_match']}。ただし {res['distance_m']:.0f}m 動いたので"
                           "元の座標がかなりずれていた可能性があります")
@@ -317,6 +384,9 @@ def main() -> int:
                     help="路線名が一致しない線への上限[m]（既定150）。"
                          "実データでは、名前が合わないのに200m以上動く候補は"
                          "ほぼ別の構造物だった")
+    ap.add_argument("--coarse-max-move", type=float, default=COARSE_MAX_MOVE_M,
+                    help=f"出発点が市区町村の中心しかない地点で、名称が一致する線への"
+                         f"上限[m]（既定{COARSE_MAX_MOVE_M:.0f}）。0で無効")
     ap.add_argument("--include-reviewed", action="store_true",
                     help="人手で確認済みの地点も動かす（既定は動かさない）")
     args = ap.parse_args()
@@ -327,7 +397,7 @@ def main() -> int:
     cache = Path(args.cache)
 
     if args.fetch:
-        fetch(spots_bbox(spots), cache)
+        fetch(spots_bbox(spots, coarse_max_move=args.coarse_max_move), cache)
         if not (args.apply or args.dry_run):
             print("\n次: python3 tools/osm_snap.py --spots "
                   f"{args.spots} --dry-run  で寄せる内容を確認してください")
@@ -348,7 +418,8 @@ def main() -> int:
             skipped_reviewed += 1
             continue
 
-        res = snap_one(s, ways, args.max_move, args.max_move_unnamed)
+        res = snap_one(s, ways, args.max_move, args.max_move_unnamed,
+                       args.coarse_max_move)
 
         if is_conflict(res):
             # 資料と違う路線に寄せるくらいなら動かさない。

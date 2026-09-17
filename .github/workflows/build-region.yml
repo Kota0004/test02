@@ -25,6 +25,11 @@ on:
         required: true
         default: "5"
         type: string
+      enrich:
+        description: "標高とOSMへの寄せまで行う（時間がかかる）"
+        required: true
+        default: true
+        type: boolean
       commit:
         description: "結果をコミットする"
         required: true
@@ -81,6 +86,53 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # 標高と、OSMのトンネル情報への寄せ。
+      # 東京都のように資料の住所が区までしかない県は、ジオコーディングだけでは
+      # 区の中心に落ちてしまい、運転中のアラートには使えない。名称が一致する
+      # 構造物へ寄せて初めて地点の粒度になる。
+      - name: 標高を付けてOSMへ寄せる
+        if: ${{ inputs.enrich }}
+        working-directory: 災害アプリ
+        run: |
+          set -o pipefail
+          for f in data/spots_*.json; do
+            case "$f" in *spots_chiba.json) continue;; esac
+            echo "########## $f ##########"
+            python3 tools/enrich_dem.py --spots "$f" 2>&1 | tail -12 || true
+            # 県ごとに取得範囲が変わるので、キャッシュも県ごとに分ける
+            cache="data/osm_$(basename "$f" .json).json"
+            python3 tools/osm_snap.py --spots "$f" --cache "$cache" --fetch 2>&1 | tail -5 || true
+            python3 tools/osm_snap.py --spots "$f" --cache "$cache" --apply 2>&1 | tail -20 || true
+            echo
+          done
+
+      # 取り込んだ中身を実際に見る。件数と警告だけでは、
+      # 住所の粒度やジオコーディングの当たり方までは分からない。
+      - name: 取り込んだ中身をいくつか見せる
+        working-directory: 災害アプリ
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, collections
+          for f in sorted(pathlib.Path("data").glob("spots_*.json")):
+              if f.name == "spots_chiba.json":
+                  continue
+              d = json.loads(f.read_text(encoding="utf-8"))
+              sp = d.get("spots", [])
+              print(f"########## {f.name}: {len(sp)} 件 ##########")
+              conf = collections.Counter(
+                  round(s.get("evidence", {}).get("confidence", 0), 1) for s in sp)
+              print("  確からしさの分布:", dict(sorted(conf.items())))
+              nocoord = sum(1 for s in sp if s.get("lon") is None)
+              print(f"  座標なし: {nocoord} 件")
+              for s in sp[:8]:
+                  ev = s.get("evidence", {})
+                  print(f"    {s['id']} {s['name']}")
+                  print(f"        住所='{s.get('address','')}' 路線='{s.get('road','')}'")
+                  print(f"        座標=({s.get('lon')}, {s.get('lat')}) "
+                        f"確からしさ={ev.get('confidence')} 理由={ev.get('note','')}")
+              print()
+          PY
+
       # 取り込んだ中身を点検して、おかしなものが混ざっていないかを見る。
       - name: 取り込んだデータを点検する
         working-directory: 災害アプリ
@@ -100,7 +152,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           # data/*.json は既定で除外してある（人手レビュー前のものを
           # 誤って公開しないため）。ここは意図的な更新なので -f で入れる。
-          git add -f data/spots_*.json data/regions.json
+          git add -f data/spots_*.json data/osm_spots_*.json data/regions.json
           if git diff --cached --quiet; then
             echo "変化なし。コミットしません。"
             exit 0

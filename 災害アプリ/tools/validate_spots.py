@@ -20,10 +20,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import geo  # noqa: E402
 import risk  # noqa: E402
 
-# 都道府県のおおよその範囲（はみ出していたら座標がおかしい）
+# 日本のおおよその範囲（南鳥島・与那国島まで含む）。
+# ここから出ていれば、座標そのものが壊れている。
+JAPAN_BBOX = (122.9, 20.4, 154.0, 45.6)
+
+# 都道府県のおおよその範囲。分かっているものだけ書く。
+# 47都道府県ぶんを記憶で書くと誤りが混ざり、正しい座標を誤検知してしまうので、
+# 実際に確かめたものだけを載せ、無い県は下の「仲間はずれ探し」で見る。
 BBOXES = {
     "chiba": (139.74, 34.87, 140.90, 36.11),
 }
+
+# 仲間はずれ探し: 同じ県の地点はまとまって分布するはずなので、
+# 中央値から極端に離れた地点はジオコーディングの失敗を疑う。
+OUTLIER_KM = 150.0
 # トンネル・立体は、標高データが「上の地形」を測るため大きな高低差が出て当然。
 # 座標のずれとは区別する。
 TUNNELISH_RE = re.compile(r"(トンネル|隧道|立体)")
@@ -107,13 +117,49 @@ def main() -> int:
         problems.append(f"座標が無い地点が {len(noxy)} 件: {noxy[:5]}")
     print(f"  座標なし: {len(noxy)} 件")
 
-    bb = BBOXES.get(args.area)
+    # エリア名は --area が既定のままでも、地点IDの接頭辞から拾えるようにする。
+    # 県を増やしたときに --area の指定漏れで誤検知するのを避ける。
+    area = args.area
+    ids = [x["id"] for x in live if "-" in x.get("id", "")]
+    if ids:
+        prefixes = {i.rsplit("-", 1)[0] for i in ids}
+        if len(prefixes) == 1:
+            area = prefixes.pop()
+
+    xy = [x for x in live if x.get("lon") is not None]
+
+    outside = [x["id"] for x in xy
+               if not (JAPAN_BBOX[0] <= x["lon"] <= JAPAN_BBOX[2]
+                       and JAPAN_BBOX[1] <= x["lat"] <= JAPAN_BBOX[3])]
+    if outside:
+        problems.append(f"日本の範囲外に出ている地点が {len(outside)} 件: {outside[:5]}")
+    print(f"  日本の範囲外: {len(outside)} 件")
+
+    bb = BBOXES.get(area)
     if bb:
-        out = [x["id"] for x in live if x.get("lon") is not None
-               and not (bb[0] <= x["lon"] <= bb[2] and bb[1] <= x["lat"] <= bb[3])]
+        out = [x["id"] for x in xy
+               if not (bb[0] <= x["lon"] <= bb[2] and bb[1] <= x["lat"] <= bb[3])]
         if out:
-            problems.append(f"対象地域の外に出ている地点が {len(out)} 件: {out[:5]}")
-        print(f"  対象地域の外: {len(out)} 件")
+            problems.append(f"{area} の範囲外に出ている地点が {len(out)} 件: {out[:5]}")
+        print(f"  {area} の範囲外: {len(out)} 件")
+    else:
+        print(f"  {area} の範囲は未登録（仲間はずれ探しで代用）")
+
+    # 中央値から極端に離れた地点を探す。県の範囲を知らなくても、
+    # 1件だけ遠くへ飛んだジオコーディング失敗は見つけられる。
+    if len(xy) >= 5:
+        import statistics
+        mlon = statistics.median(x["lon"] for x in xy)
+        mlat = statistics.median(x["lat"] for x in xy)
+        far = [(x["id"], geo.haversine_m(x["lon"], x["lat"], mlon, mlat) / 1000.0)
+               for x in xy]
+        far = [(i, d) for i, d in far if d > OUTLIER_KM]
+        if far:
+            far.sort(key=lambda t: -t[1])
+            problems.append(
+                f"他の地点から極端に離れた地点が {len(far)} 件: "
+                + ", ".join(f"{i}({d:.0f}km)" for i, d in far[:5]))
+        print(f"  中央から {OUTLIER_KM:.0f}km 超: {len(far)} 件")
 
     dups = []
     pts = [x for x in live if x.get("lon") is not None]

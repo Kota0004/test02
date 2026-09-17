@@ -1,18 +1,20 @@
 {
  "version": "1.0.0",
- "generated_at": "2026-08-22",
+ "generated_at": "2026-09-17",
  "area": "千葉県",
  "counts": {
   "total": 89,
   "verified": 67,
-  "unverified": 22
+  "unverified": 22,
+  "point": 82,
+  "area": 7
  },
  "attribution": [
   "危険箇所: 国交省千葉国道事務所 令和8年6月30日更新",
   "位置の補正: © OpenStreetMap contributors (ODbL)",
   "地図・標高: 地理院タイル（国土地理院）"
  ],
- "disclaimer": "参考情報です。通行の可否を保証するものではありません。最終判断は現地の状況で行ってください。位置が人手で未確認の地点が 22 件含まれます。",
+ "disclaimer": "参考情報です。通行の可否を保証するものではありません。最終判断は現地の状況で行ってください。位置が人手で未確認の地点が 22 件含まれます。うち 7 件は資料に番地が無く、位置は市区町村レベルの推定です（地点の警報は鳴らしません）。",
  "spots": [
   {
    "id": "chiba-0001",
@@ -26,6 +28,8 @@
    "road_type": "市道",
    "address": "千葉県習志野市袖ケ浦1丁目11番",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 38.9
   },
   {
@@ -40,6 +44,8 @@
    "road_type": "市道",
    "address": "千葉県習志野市津田沼3丁目11番",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 21.0
   },
   {
@@ -54,6 +60,8 @@
    "road_type": "市道",
    "address": "千葉県習志野市鷺沼台1丁目1番",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 35.0
   },
   {
@@ -68,6 +76,8 @@
    "road_type": "国道(県管理)",
    "address": "千葉県市原市五井",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 34.3
   },
   {
@@ -82,6 +92,8 @@
    "road_type": "県道",
    "address": "千葉県市原市廿五里",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 33.8
   },
   {
@@ -96,6 +108,8 @@
    "road_type": "市道",
    "address": "千葉県市原市五井中央西3丁目",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 21.0
   },
   {
@@ -110,6 +124,8 @@
    "road_type": "市道",
    "address": "千葉県市原市村上",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 21.1
   },
   {
@@ -124,6 +140,8 @@
    "road_type": "市道",
    "address": "千葉県市原市西広",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 44.7
   },
   {
@@ -138,6 +156,8 @@
    "road_type": "市道",
    "address": "千葉県市原市古市場",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 35.8
   },
   {
@@ -152,6 +172,8 @@
    "road_type": "県道",
    "address": "千葉県市川市市川3丁目",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 41.1
   },
   {
@@ -166,6 +188,8 @@
    "road_type": "市道",
    "address": "千葉県市川市原木1丁目",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 21.0,
    "snap": {
     "moved_m": 142.4,
@@ -185,6 +209,8 @@
    "road_type": "県道",
    "address": "千葉県船橋市前原西2丁目",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 21.9
   },
   {
@@ -199,6 +225,8 @@
    "road_type": "県道",
    "address": "千葉県船橋市山野町",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 21.0,
    "snap": {
     "moved_m": 213.4,
@@ -218,6 +246,8 @@
    "road_type": "県道",
    "address": "千葉県船橋市本郷町",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 34.5
   },
   {
@@ -232,6 +262,8 @@
    "road_type": "市道",
    "address": "千葉県船橋市海神1丁目1番",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 44.0,
    "snap": {
     "moved_m": 47.7,
@@ -251,6 +283,8 @@
    "road_type": "市道",
    "address": "千葉県船橋市海神6丁目24番",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 26.0,
    "snap": {
     "moved_m": 27.6,
@@ -270,6 +304,8 @@
    "road_type": "市道",
    "address": "千葉県船橋市本町7丁目4番",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 27.5,
    "snap": {
     "moved_m": 32.5,
@@ -289,6 +325,8 @@
    "road_type": "市道",
    "address": "千葉県船橋市市場1丁目2番",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 27.8,
    "snap": {
     "moved_m": 53.0,
@@ -308,6 +346,8 @@
    "road_type": "市道",
    "address": "千葉県船橋市丸山1丁目1番",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 47.1,
    "snap": {
     "moved_m": 63.3,
@@ -327,6 +367,8 @@
    "road_type": "市道",
    "address": "千葉県船橋市印内2丁目2番",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 26.7,
    "snap": {
     "moved_m": 1.1,
@@ -346,6 +388,8 @@
    "road_type": "県道",
    "address": "千葉県松戸市五香",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 27.9,
    "snap": {
     "moved_m": 258.2,
@@ -365,6 +409,8 @@
    "road_type": "市道",
    "address": "千葉県松戸市指向アンダーパス",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 34.4,
    "snap": {
     "moved_m": 11.5,
@@ -384,6 +430,8 @@
    "road_type": "市道",
    "address": "千葉県松戸市忠仲アンダーパス",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 32.3,
    "snap": {
     "moved_m": 11.5,
@@ -403,6 +451,8 @@
    "road_type": "市道",
    "address": "千葉県松戸市新松戸アンダーパス",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 35.2,
    "snap": {
     "moved_m": 20.9,
@@ -422,6 +472,8 @@
    "road_type": "市道",
    "address": "千葉県松戸市幸谷アンダーパス",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 39.1,
    "snap": {
     "moved_m": 127.2,
@@ -441,6 +493,8 @@
    "road_type": "市道",
    "address": "千葉県松戸市宮前アンダーパス",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 37.7,
    "snap": {
     "moved_m": 11.5,
@@ -460,6 +514,8 @@
    "road_type": "市道",
    "address": "千葉県野田市川間ガード下",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 33.0
   },
   {
@@ -474,6 +530,8 @@
    "road_type": "市道",
    "address": "千葉県流山市南流山1丁目",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 33.0
   },
   {
@@ -488,6 +546,8 @@
    "road_type": "市道",
    "address": "千葉県流山市南流山4丁目",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 32.0
   },
   {
@@ -502,6 +562,8 @@
    "road_type": "市道",
    "address": "千葉県流山市おおたかの森東一丁目",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 34.8,
    "snap": {
     "moved_m": 117.5,
@@ -521,6 +583,8 @@
    "road_type": "市道",
    "address": "千葉県鎌ケ谷市丸山1丁目",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 35.3
   },
   {
@@ -535,6 +599,8 @@
    "road_type": "国道(県管理)",
    "address": "千葉県我孫子市本町1丁目",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 21.0,
    "snap": {
     "moved_m": 43.7,
@@ -554,6 +620,8 @@
    "road_type": "県道",
    "address": "千葉県我孫子市泉",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 21.0
   },
   {
@@ -568,6 +636,8 @@
    "road_type": "市道",
    "address": "千葉県我孫子市柴崎台1丁目",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 21.0
   },
   {
@@ -582,6 +652,8 @@
    "road_type": "県道",
    "address": "千葉県柏市富里",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 33.4
   },
   {
@@ -596,6 +668,8 @@
    "road_type": "県道",
    "address": "千葉県柏市北柏",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 26.8,
    "snap": {
     "moved_m": 96.8,
@@ -615,6 +689,8 @@
    "road_type": "市道",
    "address": "千葉県印西市大森4233-10",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 45.3,
    "snap": {
     "moved_m": 119.1,
@@ -634,6 +710,8 @@
    "road_type": "町道",
    "address": "千葉県栄町北781-47",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 30.9
   },
   {
@@ -648,6 +726,8 @@
    "road_type": "町道",
    "address": "千葉県栄町北80-3",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 31.9,
    "snap": {
     "moved_m": 32.1,
@@ -667,6 +747,8 @@
    "road_type": "町道",
    "address": "千葉県栄町北444-4",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 31.4
   },
   {
@@ -681,6 +763,8 @@
    "road_type": "町道",
    "address": "千葉県一宮町一宮町綱田字麦田37-1",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 35.9
   },
   {
@@ -695,6 +779,8 @@
    "road_type": "町道",
    "address": "千葉県一宮町一宮町一宮字下村9278",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 34.8
   },
   {
@@ -709,6 +795,8 @@
    "road_type": "町道",
    "address": "千葉県白子町白子町古所3290-23",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 31.9
   },
   {
@@ -723,6 +811,8 @@
    "road_type": "市道",
    "address": "千葉県いすみ市いすみ市岬町椎木",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 23.7
   },
   {
@@ -737,6 +827,8 @@
    "road_type": "市道",
    "address": "千葉県いすみ市いすみ市行川",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 21.5
   },
   {
@@ -751,6 +843,8 @@
    "road_type": "市道",
    "address": "千葉県鴨川市太海地下道",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 31.6
   },
   {
@@ -765,6 +859,8 @@
    "road_type": "市道",
    "address": "千葉県木更津市牛袋1242番地",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 21.0,
    "snap": {
     "moved_m": 115.8,
@@ -784,6 +880,8 @@
    "road_type": "市道",
    "address": "千葉県木更津市牛袋605番地",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 36.0
   },
   {
@@ -798,6 +896,8 @@
    "road_type": "市道",
    "address": "千葉県木更津市牛袋679番地",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 39.0
   },
   {
@@ -812,6 +912,8 @@
    "road_type": "市道",
    "address": "千葉県木更津市十日市場45-2番地",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 40.0
   },
   {
@@ -826,6 +928,8 @@
    "road_type": "県道",
    "address": "千葉県君津市末吉",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 33.7
   },
   {
@@ -840,6 +944,8 @@
    "road_type": "県道",
    "address": "千葉県富津市竹岡",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 49.0
   },
   {
@@ -854,6 +960,8 @@
    "road_type": "県道",
    "address": "千葉県富津市大堀",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 36.3
   },
   {
@@ -868,6 +976,8 @@
    "road_type": "市道",
    "address": "千葉県袖ケ浦市坂戸市場2433-4",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 21.0,
    "snap": {
     "moved_m": 37.9,
@@ -887,6 +997,8 @@
    "road_type": "市道",
    "address": "千葉県袖ケ浦市神納4189-2",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 23.2,
    "snap": {
     "moved_m": 57.4,
@@ -906,6 +1018,8 @@
    "road_type": "市道",
    "address": "千葉県袖ケ浦市神納4191-1",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 24.4,
    "snap": {
     "moved_m": 62.1,
@@ -925,6 +1039,8 @@
    "road_type": "市道",
    "address": "千葉県袖ケ浦市神納4207-4",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 21.0,
    "snap": {
     "moved_m": 95.0,
@@ -944,6 +1060,8 @@
    "road_type": "国道(国管理)",
    "address": "千葉県松戸市矢切トンネル",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 34.2,
    "snap": {
     "moved_m": 11.5,
@@ -963,6 +1081,8 @@
    "road_type": "市道",
    "address": "四街道市四街道市鹿渡1046-1",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 33.0
   },
   {
@@ -977,6 +1097,8 @@
    "road_type": "県道",
    "address": "千葉県我孫子市柴崎",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 24.4
   },
   {
@@ -991,6 +1113,8 @@
    "road_type": "県道",
    "address": "千葉県習志野市実籾",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 36.6
   },
   {
@@ -1005,6 +1129,8 @@
    "road_type": "市道",
    "address": "千葉県市川市八幡1丁目",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 34.0,
    "snap": {
     "moved_m": 142.3,
@@ -1024,6 +1150,8 @@
    "road_type": "県道",
    "address": "千葉県我孫子市布佐アンダー",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 33.6
   },
   {
@@ -1038,6 +1166,8 @@
    "road_type": "県道",
    "address": "千葉県袖ケ浦市袖ケ浦アンダーパス",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 33.2
   },
   {
@@ -1052,6 +1182,8 @@
    "road_type": "市道",
    "address": "千葉県松戸市新松戸1丁目アンダーパス",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 22.3,
    "snap": {
     "moved_m": 20.9,
@@ -1071,6 +1203,8 @@
    "road_type": "国道(国管理)",
    "address": "千葉県市川市北国分",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 21.0,
    "snap": {
     "moved_m": 83.8,
@@ -1090,6 +1224,8 @@
    "road_type": "国道(国管理)",
    "address": "千葉県市川市菅野",
    "verified": true,
+   "precision": "point",
+   "precision_note": "人手で位置を確認済み",
    "t60": 34.2
   },
   {
@@ -1104,6 +1240,8 @@
    "road_type": "国道(国管理)",
    "address": "千葉県松戸市千葉県松戸市小山",
    "verified": false,
+   "precision": "area",
+   "precision_note": "資料の住所が市区町村までしかない",
    "t60": 21.0
   },
   {
@@ -1118,6 +1256,8 @@
    "road_type": "市道",
    "address": "千葉県我孫子市JR常磐線",
    "verified": false,
+   "precision": "area",
+   "precision_note": "資料の住所が市区町村までしかない",
    "t60": 35.7
   },
   {
@@ -1132,6 +1272,8 @@
    "road_type": "国道(国管理)",
    "address": "千葉県市川市二俣アンダーパス",
    "verified": false,
+   "precision": "area",
+   "precision_note": "資料の住所が市区町村までしかない",
    "t60": 33.9
   },
   {
@@ -1146,6 +1288,8 @@
    "road_type": "県道",
    "address": "千葉県流山市流山市おおたかの森西4丁目",
    "verified": false,
+   "precision": "point",
+   "precision_note": "資料に番地までの住所がある",
    "t60": 35.1
   },
   {
@@ -1160,6 +1304,8 @@
    "road_type": "国道(国管理)",
    "address": "千葉県松戸市上矢切トンネル",
    "verified": false,
+   "precision": "area",
+   "precision_note": "資料の住所が市区町村までで、そこから 124m 寄せた推定位置",
    "t60": 37.4,
    "snap": {
     "moved_m": 123.9,
@@ -1179,6 +1325,8 @@
    "road_type": "市道",
    "address": "千葉県千葉市中央区春日1、2丁目",
    "verified": false,
+   "precision": "point",
+   "precision_note": "資料に番地までの住所がある",
    "t60": 45.0
   },
   {
@@ -1193,6 +1341,8 @@
    "road_type": "市道",
    "address": "千葉県千葉市中央区汐見丘町",
    "verified": false,
+   "precision": "area",
+   "precision_note": "資料の住所が市区町村までで、そこから 120m 寄せた推定位置",
    "t60": 36.8,
    "snap": {
     "moved_m": 119.7,
@@ -1212,6 +1362,8 @@
    "road_type": "市道",
    "address": "千葉県千葉市中央区富士見1丁目",
    "verified": false,
+   "precision": "point",
+   "precision_note": "資料に番地までの住所がある",
    "t60": 46.5,
    "snap": {
     "moved_m": 88.1,
@@ -1231,6 +1383,8 @@
    "road_type": "市道",
    "address": "千葉県千葉市中央区新町・富士見1丁目",
    "verified": false,
+   "precision": "point",
+   "precision_note": "資料に番地までの住所がある",
    "t60": 21.0,
    "snap": {
     "moved_m": 157.9,
@@ -1250,6 +1404,8 @@
    "road_type": "市道",
    "address": "千葉県千葉市中央区寒川町3丁目",
    "verified": false,
+   "precision": "point",
+   "precision_note": "資料に番地までの住所がある",
    "t60": 35.8
   },
   {
@@ -1264,6 +1420,8 @@
    "road_type": "市道",
    "address": "千葉県千葉市中央区稲荷町3丁目",
    "verified": false,
+   "precision": "point",
+   "precision_note": "資料に番地までの住所がある",
    "t60": 31.3,
    "snap": {
     "moved_m": 130.0,
@@ -1283,6 +1441,8 @@
    "road_type": "市道",
    "address": "千葉県千葉市中央区蘇我2、3、4、5丁目",
    "verified": false,
+   "precision": "point",
+   "precision_note": "資料に番地までの住所がある",
    "t60": 35.7
   },
   {
@@ -1297,6 +1457,8 @@
    "road_type": "市道",
    "address": "千葉県千葉市中央区村田町",
    "verified": false,
+   "precision": "area",
+   "precision_note": "資料の住所が市区町村までで、そこから 92m 寄せた推定位置",
    "t60": 21.0,
    "snap": {
     "moved_m": 92.0,
@@ -1316,6 +1478,8 @@
    "road_type": "市道",
    "address": "千葉県千葉市中央区新千葉1、2丁目、新町、登戸2丁目",
    "verified": false,
+   "precision": "point",
+   "precision_note": "資料に番地までの住所がある",
    "t60": 34.5,
    "snap": {
     "moved_m": 89.2,
@@ -1335,6 +1499,8 @@
    "road_type": "国道(国管理)",
    "address": "千葉県千葉市中央区村田町",
    "verified": false,
+   "precision": "point",
+   "precision_note": "名称が一致する構造物へ 92m 寄せた",
    "t60": 21.0,
    "snap": {
     "moved_m": 92.0,
@@ -1354,6 +1520,8 @@
    "road_type": "県道(市管理)",
    "address": "千葉県千葉市花見川区幕張町4丁目",
    "verified": false,
+   "precision": "point",
+   "precision_note": "資料に番地までの住所がある",
    "t60": 49.0
   },
   {
@@ -1368,6 +1536,8 @@
    "road_type": "市道",
    "address": "千葉県千葉市花見川区幕張町5丁目",
    "verified": false,
+   "precision": "point",
+   "precision_note": "資料に番地までの住所がある",
    "t60": 35.5
   },
   {
@@ -1382,6 +1552,8 @@
    "road_type": "市道",
    "address": "千葉県千葉市美浜区幸町2丁目~稲毛区穴川3丁目",
    "verified": false,
+   "precision": "point",
+   "precision_note": "資料に番地までの住所がある",
    "t60": 36.8
   },
   {
@@ -1396,6 +1568,8 @@
    "road_type": "市道",
    "address": "千葉県千葉市若葉区若松町・桜木北1、2丁目",
    "verified": false,
+   "precision": "point",
+   "precision_note": "資料に番地までの住所がある",
    "t60": 37.3
   },
   {
@@ -1410,6 +1584,8 @@
    "road_type": "市道",
    "address": "千葉県千葉市緑区おゆみ野3丁目・鎌取町",
    "verified": false,
+   "precision": "point",
+   "precision_note": "資料に番地までの住所がある",
    "t60": 36.5,
    "snap": {
     "moved_m": 22.0,
@@ -1429,6 +1605,8 @@
    "road_type": "国道(国管理)",
    "address": "千葉県千葉市中央区千葉港~中央区問屋町",
    "verified": false,
+   "precision": "point",
+   "precision_note": "名称が一致する構造物へ 189m 寄せた",
    "t60": 33.4,
    "snap": {
     "moved_m": 189.2,
@@ -1448,6 +1626,8 @@
    "road_type": "市道",
    "address": "千葉県流山市木地区",
    "verified": false,
+   "precision": "area",
+   "precision_note": "資料の住所が市区町村までしかない",
    "t60": 34.1
   }
  ]
