@@ -37,6 +37,10 @@ const check = (n, c, e = '') => (c ? ok : ng).push(n + (e ? ` — ${e}` : ''));
     });
     const page = await ctx.newPage();
     await useLocalMaplibre(page);
+    // アプリは spots.json を先に読むので、そちらを差し替える。
+    // spots_chiba.json だけ差し替えても実データが読まれてしまう。
+    await page.route('**/data/spots.json', r => r.fulfill({
+      status: 200, contentType: 'application/json', body: JSON.stringify(data) }));
     await page.route('**/data/spots_chiba.json', r => r.fulfill({
       status: 200, contentType: 'application/json', body: JSON.stringify(data) }));
     await page.goto(`${BASE}/index.html`, { waitUntil: 'load' });

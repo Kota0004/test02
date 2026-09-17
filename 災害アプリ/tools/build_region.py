@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -136,6 +137,8 @@ def main() -> int:
     ap.add_argument("--sleep", type=float, default=1.0, help="ジオコーディングの間隔[秒]")
     ap.add_argument("--limit", type=int, default=0, help="各県の先頭N件だけ（動作確認用）")
     ap.add_argument("--no-geocode", action="store_true")
+    ap.add_argument("--strict", action="store_true",
+                    help="1県でも取り込めなければ失敗扱いにする（既定は成功した県を活かす）")
     ap.add_argument("--html", default="", help="索引ページのHTMLをファイルから読む（試験用）")
     args = ap.parse_args()
 
@@ -181,8 +184,22 @@ def main() -> int:
         total_ok += ok
     print(f"\n{total_ok}/{len(results)} 県を取り込みました")
 
-    # 1県でも失敗したら失敗扱いにする。黙って欠けたまま進むより気づける方がよい。
-    return 0 if total_ok == len(results) else 1
+    failed = [pref for pref, ok, _ in results if not ok]
+    if failed:
+        # 失敗した県があっても、成功した県の取り込みは活かす。
+        # ここで止めると、9県中2県のPDFが違う作りだっただけで
+        # 残り7県ぶん（20分かけた取得）を捨てることになる。
+        # ただし黙って進むと欠けたことに気づけないので、必ず目立たせる。
+        print(f"\n⚠ 取り込めなかった県: {', '.join(failed)}")
+        print("   表の作りが違う可能性があります。--only で個別に "
+              "--inspect / --dump-table して確かめてください。")
+        summary = os.environ.get("GITHUB_STEP_SUMMARY")
+        if summary:
+            with open(summary, "a", encoding="utf-8") as f:
+                f.write(f"\n### ⚠ 取り込めなかった県: {', '.join(failed)}\n")
+    if args.strict and failed:
+        return 1
+    return 0 if total_ok else 2
 
 
 if __name__ == "__main__":

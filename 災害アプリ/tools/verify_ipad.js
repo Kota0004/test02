@@ -7,7 +7,7 @@
  * 主要操作（プリセット・現在地アラート）を確認する。
  */
 const { chromium } = require('playwright');
-const { useLocalMaplibre } = require('./verify_support');
+const { useLocalMaplibre, positionNearAlertableSpot } = require('./verify_support');
 const BASE = process.env.BASE_URL || 'http://127.0.0.1:8000';
 const ok = [], ng = [];
 const check = (n,c,e='') => (c?ok:ng).push(n + (e?` — ${e}`:''));
@@ -21,6 +21,9 @@ const check = (n,c,e='') => (c?ok:ng).push(n + (e?` — ${e}`:''));
     const errs = []; p.on('pageerror', e => errs.push(e.message));
     await p.goto(`${BASE}/index.html`, { waitUntil:'load' });
     await p.waitForSelector('.cnt'); await p.waitForTimeout(700);
+    // 現在地はデータから決める（座標の決め打ちは取り込み直しで壊れる）
+    const home = await positionNearAlertableSpot(p, 200);
+    await ctx.setGeolocation({ longitude: home.longitude, latitude: home.latitude });
 
     check(`${label}: 横スクロールなし`, await p.evaluate(() =>
       document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1));

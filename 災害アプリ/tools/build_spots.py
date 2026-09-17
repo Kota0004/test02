@@ -473,6 +473,38 @@ def confidence_of(query: str, res: dict | None) -> tuple[float, str]:
     return conf, note
 
 
+def was_reviewed(spot: dict) -> bool:
+    """人手が触った地点か（確認済みの印か、pending 以外の判断がある）。"""
+    status = (spot.get("review") or {}).get("status", "pending")
+    return bool(status != "pending" or (spot.get("evidence") or {}).get("verified_at"))
+
+
+def preserve_reviewed(spots: list[dict], out: Path,
+                      overwrite: bool = False) -> tuple[list[dict], int]:
+    """既に人手で確認した地点は、取り込み直しても壊さない。
+
+    資料は年に数回更新されるので取り込み直すことになるが、そのたびに
+    レビュー結果（確認済みの印、手で直した座標、除外の判断）が消えると、
+    同じ作業をやり直させることになる。IDが一致する地点のうち、
+    人手が触ったものは古い記録をそのまま残す。
+
+    資料から消えた地点は残さない。存在しない箇所を出し続ける方が危ない。
+    """
+    if overwrite or not out.exists():
+        return spots, 0
+    try:
+        prev = json.loads(out.read_text(encoding="utf-8"))
+    except Exception as e:
+        print(f"既存の出力を読めませんでした（無視して上書きします）: {e}", file=sys.stderr)
+        return spots, 0
+    reviewed = {o["id"]: o for o in prev.get("spots", [])
+                if o.get("id") and was_reviewed(o)}
+    if not reviewed:
+        return spots, 0
+    merged = [reviewed.get(sp["id"], sp) for sp in spots]
+    return merged, sum(1 for sp in merged if sp["id"] in reviewed)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -492,6 +524,8 @@ def main() -> int:
     ap.add_argument("--page", type=int, default=0,
                     help="指定ページだけを対象にする（0=全ページ）")
     ap.add_argument("--source", default="", help="出典表記（例: 国交省千葉国道事務所 2026-06-30版）")
+    ap.add_argument("--overwrite-reviewed", action="store_true",
+                    help="人手で確認済みの地点も上書きする（既定では残す）")
     args = ap.parse_args()
 
     pdf_path = Path(args.pdf)
@@ -578,6 +612,9 @@ def main() -> int:
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
+
+    spots, kept = preserve_reviewed(spots, out, args.overwrite_reviewed)
+
     payload = {
         "version": "0.1.0",
         "generated_at": date.today().isoformat(),
@@ -596,6 +633,8 @@ def main() -> int:
 
     need = sum(1 for r in review if r["needs_review"])
     print(f"\n出力: {out}  ({len(spots)} 件)")
+    if kept:
+        print(f"  うち {kept} 件は人手で確認済みのため、以前の内容をそのまま残しました")
     print(f"レビュー用CSV: {rev}")
     print(f"要レビュー: {need} 件 / {len(review)} 件")
     print("\n次の手順: CSVを開いて座標を地図で確認し、正しいものは confidence を 1.0、"
