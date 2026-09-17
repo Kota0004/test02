@@ -61,13 +61,49 @@ jobs:
           echo "公開するファイル:"
           find . -type f | sort
 
-      - uses: actions/configure-pages@v5
-        with:
-          enablement: true      # Pages が未設定なら有効にする
+      # Pages がまだ有効になっていないかを先に見る。
+      #
+      # ワークフローの GITHUB_TOKEN では Pages サイトを「新規作成」できない
+      # （Resource not accessible by integration）。有効化だけは人が一度だけ
+      # 押す必要があるので、それまではここで理由を言って正常終了する。
+      # 待っている間ずっと赤いより、何をすればいいかが分かる方がよい。
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          code=$(curl -s -o /tmp/pages.json -w '%{http_code}' \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/pages")
+          if [ "$code" = "404" ]; then
+            echo "ready=no" >> "$GITHUB_OUTPUT"
+            {
+              echo "### 公開を始めるにはスイッチを1回入れてください"
+              echo
+              echo "1. https://github.com/${{ github.repository }}/settings/pages を開く"
+              echo "2. **Build and deployment** の **Source** を **GitHub Actions** にする"
+              echo "3. このワークフローを Re-run する（以後は自動）"
+              echo
+              echo "ワークフローの権限では Pages を新規作成できないため、ここだけ手作業が要ります。"
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "Pages が未設定です。上の手順のあと再実行してください。"
+            exit 0
+          fi
+          if [ "$code" != "200" ]; then
+            echo "Pages の状態を取得できませんでした (HTTP $code)"
+            cat /tmp/pages.json
+            exit 1
+          fi
+          echo "ready=yes" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/upload-pages-artifact@v3
+      - if: steps.check.outputs.ready == 'yes'
+        uses: actions/configure-pages@v5
+
+      - if: steps.check.outputs.ready == 'yes'
+        uses: actions/upload-pages-artifact@v3
         with:
           path: 災害アプリ/prototype
 
-      - id: deploy
+      - if: steps.check.outputs.ready == 'yes'
+        id: deploy
         uses: actions/deploy-pages@v4
