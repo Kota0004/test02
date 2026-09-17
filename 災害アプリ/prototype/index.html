@@ -248,7 +248,10 @@
     // 取得と解析だけを try で包む。初期化まで包むと、描画側の不具合を
     // 「読み込み失敗」と誤認してサンプルに落ちてしまい、原因が見えなくなる。
     let loaded = null;
-    for (const [url, isReal] of [['./data/spots_chiba.json', true],
+    // spots.json は複数県をまとめたもの。無ければ千葉単体、
+    // それも無ければ動作確認用のサンプルに落とす。
+    for (const [url, isReal] of [['./data/spots.json', true],
+                                 ['./data/spots_chiba.json', true],
                                  ['./data/sample_spots.json', false]]) {
       try {
         const res = await fetch(url);

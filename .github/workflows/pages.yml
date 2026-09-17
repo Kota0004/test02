@@ -65,8 +65,12 @@ jobs:
         working-directory: 災害アプリ
         run: |
           set -o pipefail
+          # 全県ぶんをまとめた取り込み対象があればそれを、無ければ千葉単体を使う
+          src=data/spots_chiba.json
+          [ -f data/_amedas_targets.json ] && src=data/_amedas_targets.json
+          echo "雨量の対象: $src"
           if python3 tools/fetch_amedas.py \
-               --spots data/spots_chiba.json \
+               --spots "$src" \
                --out prototype/data/risk_latest.json 2>&1 | tee /tmp/out.txt; then
             status="取り込み成功"
           else
@@ -85,7 +89,7 @@ jobs:
         run: |
           test -f index.html   || { echo "index.html がない"; exit 1; }
           test -f risk.js      || { echo "risk.js がない"; exit 1; }
-          test -f data/spots_chiba.json || { echo "危険箇所データがない"; exit 1; }
+          ls data/spots*.json >/dev/null 2>&1 || { echo "危険箇所データがない"; exit 1; }
           echo "公開するファイル:"
           find . -type f | sort
 

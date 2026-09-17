@@ -9,6 +9,11 @@
 
     python3 tools/export_prototype_data.py --in data/spots_chiba.json \\
         --out prototype/data/spots_chiba.json
+
+複数県をまとめて1つにすることもできる:
+
+    python3 tools/export_prototype_data.py --in data/spots_*.json \\
+        --out prototype/data/spots.json --area-name 関東
 """
 from __future__ import annotations
 
@@ -62,28 +67,42 @@ def position_precision(spot: dict) -> tuple[str, str]:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--in", dest="src", required=True)
+    ap.add_argument("--in", dest="src", required=True, nargs="+",
+                    help="レビュー済みデータ。複数指定するとまとめて1つにする")
     ap.add_argument("--out", dest="dst", required=True)
     ap.add_argument("--area-name", default="千葉県")
     args = ap.parse_args()
 
-    src = json.loads(Path(args.src).read_text(encoding="utf-8"))
     out, skipped = [], 0
-    for s in src["spots"]:
-        status = (s.get("review") or {}).get("status", "pending")
-        if status == "excluded" or s.get("lon") is None:
-            skipped += 1
-            continue
-        ev = s.get("evidence") or {}
-        rec = {k: s.get(k) for k in KEEP if s.get(k) is not None}
-        rec["verified"] = bool(ev.get("verified_at"))
-        rec["precision"], rec["precision_note"] = position_precision(s)
-        rec["t60"] = round(risk.compute_t60(s), 1)
-        snap = (s.get("params") or {}).get("snap")
-        if snap:
-            rec["snap"] = {"moved_m": snap.get("moved_m"), "matched": snap.get("matched"),
-                           "confidence": snap.get("confidence")}
-        out.append(rec)
+    sources: list[str] = []
+    seen_ids: set[str] = set()
+    for path in args.src:
+        src = json.loads(Path(path).read_text(encoding="utf-8"))
+        first_ev = (src.get("spots") or [{}])[0].get("evidence") or {}
+        if first_ev.get("source"):
+            sources.append(first_ev["source"])
+        for s in src["spots"]:
+            status = (s.get("review") or {}).get("status", "pending")
+            if status == "excluded" or s.get("lon") is None:
+                skipped += 1
+                continue
+            # 県をまたいでIDが衝突すると、片方が消えたり
+            # 取り込み済み雨量の紐付けが狂ったりする。気づけるように止める。
+            if s["id"] in seen_ids:
+                print(f"IDが重複しています: {s['id']}", file=sys.stderr)
+                return 2
+            seen_ids.add(s["id"])
+            ev = s.get("evidence") or {}
+            rec = {k: s.get(k) for k in KEEP if s.get(k) is not None}
+            rec["verified"] = bool(ev.get("verified_at"))
+            rec["precision"], rec["precision_note"] = position_precision(s)
+            rec["t60"] = round(risk.compute_t60(s), 1)
+            snap = (s.get("params") or {}).get("snap")
+            if snap:
+                rec["snap"] = {"moved_m": snap.get("moved_m"),
+                               "matched": snap.get("matched"),
+                               "confidence": snap.get("confidence")}
+            out.append(rec)
 
     verified = sum(1 for r in out if r["verified"])
     area_only = sum(1 for r in out if r["precision"] == "area")
@@ -95,8 +114,8 @@ def main() -> int:
                    "unverified": len(out) - verified,
                    "point": len(out) - area_only, "area": area_only},
         "attribution": [
-            "危険箇所: " + (src.get("spots", [{}])[0].get("evidence", {}) or {}).get(
-                "source", "国土交通省 道路冠水注意箇所マップ"),
+            "危険箇所: " + (" ／ ".join(dict.fromkeys(sources))
+                          or "国土交通省 道路冠水注意箇所マップ"),
             "位置の補正: © OpenStreetMap contributors (ODbL)",
             "地図・標高: 地理院タイル（国土地理院）",
         ],
