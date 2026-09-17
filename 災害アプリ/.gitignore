@@ -11,6 +11,8 @@ data/amedastable_cache.json
 data/*.pre-snap.bak
 !data/.gitkeep
 !data/README.md
+# 取り込み先の設定。出力ではなく手で保守するものなので追跡する。
+!data/regions.json
 
 # 依存
 node_modules/
