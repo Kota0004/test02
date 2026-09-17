@@ -1,0 +1,109 @@
+# 地方整備局の索引ページから県別PDFを集めて取り込む（手動実行）
+#
+# 開発コンテナからは mlit.go.jp / gsi.go.jp に出られないので、
+# ネットワークに出られる Actions 側で実行する。
+#
+# ⚠️ 国土地理院の住所検索を1件1秒で叩く。首都圏9県だと1000件規模＝20分ほど。
+#    何度も回すものではないので、まず --limit で少数を試してから全件にすること。
+name: 地域のデータを取り込む
+
+on:
+  workflow_dispatch:
+    inputs:
+      region:
+        description: "地域（data/regions.json のキー）"
+        required: true
+        default: "kanto"
+        type: string
+      only:
+        description: "特定の都道府県だけ（例: 東京都。空なら全部）"
+        required: false
+        default: ""
+        type: string
+      limit:
+        description: "各県の先頭N件だけ（0で全件。まずは 5 で試す）"
+        required: true
+        default: "5"
+        type: string
+      commit:
+        description: "結果をコミットする"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-region
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r 災害アプリ/tools/requirements.txt
+
+      # 索引ページの作りが変わっていないかを先に見る。
+      # ここで県が拾えなければ、取得に進んでも無駄。
+      - name: 索引ページから県別PDFを一覧する
+        working-directory: 災害アプリ
+        run: |
+          python3 tools/build_region.py \
+            --region "${{ inputs.region }}" \
+            ${{ inputs.only && format('--only {0}', inputs.only) || '' }} \
+            --list | tee /tmp/list.txt
+          {
+            echo "### 索引ページで見つかったPDF"
+            echo '```'
+            cat /tmp/list.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 取り込む
+        working-directory: 災害アプリ
+        run: |
+          set -o pipefail
+          python3 tools/build_region.py \
+            --region "${{ inputs.region }}" \
+            ${{ inputs.only && format('--only {0}', inputs.only) || '' }} \
+            --limit "${{ inputs.limit }}" \
+            --outdir data 2>&1 | tee /tmp/build.txt
+          {
+            echo "### 取り込み結果"
+            echo '```'
+            tail -30 /tmp/build.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # 取り込んだ中身を点検して、おかしなものが混ざっていないかを見る。
+      - name: 取り込んだデータを点検する
+        working-directory: 災害アプリ
+        run: |
+          for f in data/spots_*.json; do
+            case "$f" in *spots_chiba.json) continue;; esac
+            echo "########## $f ##########"
+            python3 tools/validate_spots.py --spots "$f" 2>&1 | tail -25 || true
+            echo
+          done
+
+      - name: 結果をコミットする
+        if: ${{ inputs.commit }}
+        working-directory: 災害アプリ
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # data/*.json は既定で除外してある（人手レビュー前のものを
+          # 誤って公開しないため）。ここは意図的な更新なので -f で入れる。
+          git add -f data/spots_*.json data/regions.json
+          if git diff --cached --quiet; then
+            echo "変化なし。コミットしません。"
+            exit 0
+          fi
+          git commit -m "${{ inputs.region }} の危険箇所を取り込む"
+          git push

@@ -83,3 +83,44 @@ jobs:
           rows = len(re.findall(r"<tr", html, re.I))
           print(f"\n表の行数: {rows}")
           PY
+
+      # ④ 全国: 掲載状況一覧のCSVが実在した。中身を見て全国の全体像をつかむ。
+      - name: 掲載状況一覧CSVを取得して中身を見る
+        run: |
+          curl -sS -A "mizumichi-research/0.1" \
+            -o /tmp/kansui.csv \
+            "https://disaportal.gsi.go.jp/hazardmap/copyright/csv/kansuisouteikasyo.csv"
+          echo "サイズ: $(wc -c < /tmp/kansui.csv) bytes / 行数: $(wc -l < /tmp/kansui.csv)"
+          echo "--- 先頭20行（文字コード変換して表示） ---"
+          python3 - <<'PY'
+          import pathlib
+          raw = pathlib.Path("/tmp/kansui.csv").read_bytes()
+          for enc in ("utf-8-sig", "cp932", "utf-8"):
+              try:
+                  text = raw.decode(enc); print(f"[{enc} で読めた]"); break
+              except UnicodeDecodeError:
+                  continue
+          else:
+              raise SystemExit("文字コード不明")
+          lines = text.splitlines()
+          for l in lines[:20]:
+              print(" ", l)
+          print(f"\n合計 {len(lines)} 行")
+          PY
+
+      # ⑤ 首都圏の成否を決める確認:
+      #    千葉以外のPDFに、いまのパーサがそのまま通るか。
+      #    同じ整備局でも表の作りが違えば、県ごとに対応が要る。
+      - name: 東京都のPDFに既存パーサが通るか試す
+        working-directory: 災害アプリ
+        run: |
+          curl -sS -A "mizumichi-research/0.1" \
+            -o /tmp/tokyo.pdf \
+            "https://www.ktr.mlit.go.jp/ktr_content/content/000752436.pdf"
+          echo "サイズ: $(wc -c < /tmp/tokyo.pdf) bytes"
+          echo
+          echo "########## 一覧表のページを探す ##########"
+          python3 tools/build_spots.py --pdf /tmp/tokyo.pdf --inspect || echo "(inspect 失敗)"
+          echo
+          echo "########## 表の構造を見る ##########"
+          python3 tools/build_spots.py --pdf /tmp/tokyo.pdf --dump-table --page 2 2>&1 | head -40 || true
