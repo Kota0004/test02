@@ -107,3 +107,22 @@ jobs:
       - if: steps.check.outputs.ready == 'yes'
         id: deploy
         uses: actions/deploy-pages@v4
+
+      # 「成功」は GitHub が受理したという意味でしかない。
+      # 公開された実物を開いて、危険箇所が読み込まれて地図が出るところまで見る。
+      - if: steps.check.outputs.ready == 'yes'
+        name: 公開されたサイトが動くか確かめる
+        env:
+          BASE_URL: ${{ steps.deploy.outputs.page_url }}
+        working-directory: 災害アプリ/tools
+        run: |
+          npm i playwright
+          npx playwright install --with-deps chromium
+          # 配信が行き渡るまで少し待つ
+          for i in 1 2 3 4 5 6; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL" || true)
+            [ "$code" = "200" ] && break
+            echo "まだ $code。10秒待って再確認 ($i/6)"
+            sleep 10
+          done
+          node verify_deployed.js
