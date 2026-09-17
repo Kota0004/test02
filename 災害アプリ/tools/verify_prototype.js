@@ -146,7 +146,9 @@ const check = (name, cond, extra='') => (cond ? ok : ng).push(name + (extra ? ` 
   // 実際にネットワークを止めて確かめる。気象庁に繋がる環境でも繋がらない環境でも
   // 同じ結果になるよう、Playwright 側で通信を遮断してから試す。
   await page.route('**/www.jma.go.jp/**', route => route.abort('failed'));
-  await page.check('#nowcast');
+  // check() は「押した後もチェックが入ったまま」を前提に待つので使えない。
+  // ここで確かめたいのは逆に、失敗してチェックが外れることそのもの。
+  await page.click('#nowcast');
   await page.waitForTimeout(2500);
   const ncChecked = await page.isChecked('#nowcast');
   const ncStat = (await page.textContent('#ncStat')).replace(/\s+/g,' ');
@@ -170,14 +172,14 @@ const check = (name, cond, extra='') => (cond ? ok : ng).push(name + (extra ? ` 
   await page.route('**/hrpns/**', route => route.fulfill({
     status: 200, contentType: 'image/png', body: PIXEL
   }));
-  await page.check('#nowcast');
+  await page.click('#nowcast');
   await page.waitForTimeout(2000);
   const ncOk = await page.evaluate(() => !!window.mizumichiMap.getLayer('nowcast'));
   const ncOkStat = (await page.textContent('#ncStat')).replace(/\s+/g,' ');
   check('T8c ナウキャスト取得成功時にレイヤが載り、基準時刻が出る',
         ncOk && await page.isChecked('#nowcast') && ncOkStat.includes(FAKE_BASETIME),
         ncOkStat.slice(0, 70));
-  await page.uncheck('#nowcast');
+  await page.click('#nowcast');          // 元に戻す
   await page.waitForTimeout(300);
   await page.unroute('**/targetTimes_N1.json');
   await page.unroute('**/hrpns/**');
