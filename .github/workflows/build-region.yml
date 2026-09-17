@@ -81,6 +81,33 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # 取り込んだ中身を実際に見る。件数と警告だけでは、
+      # 住所の粒度やジオコーディングの当たり方までは分からない。
+      - name: 取り込んだ中身をいくつか見せる
+        working-directory: 災害アプリ
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, collections
+          for f in sorted(pathlib.Path("data").glob("spots_*.json")):
+              if f.name == "spots_chiba.json":
+                  continue
+              d = json.loads(f.read_text(encoding="utf-8"))
+              sp = d.get("spots", [])
+              print(f"########## {f.name}: {len(sp)} 件 ##########")
+              conf = collections.Counter(
+                  round(s.get("evidence", {}).get("confidence", 0), 1) for s in sp)
+              print("  確からしさの分布:", dict(sorted(conf.items())))
+              nocoord = sum(1 for s in sp if s.get("lon") is None)
+              print(f"  座標なし: {nocoord} 件")
+              for s in sp[:8]:
+                  ev = s.get("evidence", {})
+                  print(f"    {s['id']} {s['name']}")
+                  print(f"        住所='{s.get('address','')}' 路線='{s.get('road','')}'")
+                  print(f"        座標=({s.get('lon')}, {s.get('lat')}) "
+                        f"確からしさ={ev.get('confidence')} 理由={ev.get('note','')}")
+              print()
+          PY
+
       # 取り込んだ中身を点検して、おかしなものが混ざっていないかを見る。
       - name: 取り込んだデータを点検する
         working-directory: 災害アプリ
