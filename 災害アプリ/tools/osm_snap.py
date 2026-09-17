@@ -289,6 +289,21 @@ def snap_one(spot: dict, ways: list[dict], max_move: float,
     if coarse and coarse_max_move:
         named_limit = max(max_move, coarse_max_move)
 
+    # 出発点が粗いときは、名前の合う候補が1つに絞れたときだけ寄せる。
+    # 「本町アンダー」のような通称名は部分一致しやすく、候補が複数あるときに
+    # そのうちの1つを選ぶ根拠が無い。区の中心から2.9km動かすなら、
+    # それが唯一の候補であることが最低条件。
+    if coarse:
+        matched_ids = set()
+        for w in ways:
+            tags = w.get("tags") or {}
+            b, _ = name_bonus(spot_refs, spot_names, tags, spot_lines)
+            if b > 0 and geo.nearest_on_ways(spot["lon"], spot["lat"], [w],
+                                             max_m=named_limit):
+                matched_ids.add(w.get("id"))
+        if len(matched_ids) != 1:
+            return None
+
     best = None
     for w in ways:
         tags = w.get("tags") or {}

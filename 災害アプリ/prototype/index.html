@@ -82,6 +82,8 @@
   .ranklist div:hover{background:var(--panel2)}
   .ranklist .n{color:var(--muted);font-variant-numeric:tabular-nums;flex:none;width:16px}
   .ranklist .s{margin-left:auto;color:var(--muted);font-variant-numeric:tabular-nums}
+  .apx{display:inline-block;font-size:10px;padding:1px 5px;border-radius:99px;
+       background:#5b4a86;color:#fff;margin-left:6px;vertical-align:middle}
   .unv{display:inline-block;font-size:10px;padding:1px 5px;border-radius:99px;
     border:1px dashed #e8c33c;color:#e8c33c;margin-left:5px}
 
@@ -332,8 +334,16 @@
         'circle-color':['get','color'],
         // 位置が人手で未確認の地点は、白い輪郭で区別する（確認済みと見分けられるように）
         'circle-stroke-width':['case',['get','verified'],1.5,2.5],
-        'circle-stroke-color':['case',['get','verified'],'#0f1621','#e8c33c'],
-        'circle-opacity':['case',['get','verified'],1,0.75]
+        'circle-stroke-color':[
+          'case',
+          ['==',['get','precision'],'area'],'#8a78bd',
+          ['get','verified'],'#0f1621','#e8c33c'],
+        // 位置が推定の地点は薄く描く。地点として指し示しているように
+        // 見せないための区別で、飾りではない。
+        'circle-opacity':[
+          'case',
+          ['==',['get','precision'],'area'],0.35,
+          ['get','verified'],1,0.75]
       }
     });
 
@@ -431,6 +441,7 @@
           geometry:{ type:'Point', coordinates:[s.lon, s.lat] },
           properties:{
             id:s.id, name:s.name, kind:s.kind, verified: s.verified !== false,
+            precision: s.precision || 'point',
             kindLabel: M.KIND_LABEL[s.kind] || s.kind,
             level:s.level, score:Math.round(s.score),
             color: M.LEVELS[s.level].color,
@@ -463,7 +474,8 @@
       return `<div data-id="${esc(s.id)}">
         <span class="n">${i+1}</span>
         <span class="sw" style="background:${lv.color};width:9px;height:9px"></span>
-        <span>${esc(s.name)}${s.verified === false ? '<span class="unv">未確認</span>' : ''}</span>
+        <span>${esc(s.name)}${s.verified === false ? '<span class="unv">未確認</span>' : ''}${
+          s.precision === 'area' ? '<span class="apx">位置は推定</span>' : ''}</span>
         <span class="s">${Math.round(s.score)}</span></div>`;
     }).join('');
     el.querySelectorAll('div').forEach(row => row.addEventListener('click', () => {
@@ -534,7 +546,11 @@
     new maplibregl.Popup({ offset:14, maxWidth:'300px' })
       .setLngLat(lngLat)
       .setHTML(`
-        <h3>${p.name}${p.verified ? '' : '<span class="unv">位置は未確認</span>'}</h3>
+        <h3>${p.name}${p.verified ? '' : '<span class="unv">位置は未確認</span>'}${
+          p.precision === 'area' ? '<span class="apx">位置は推定</span>' : ''}</h3>
+        ${p.precision === 'area' ? '<p style="margin:.4em 0;color:#8a78bd">'
+          + '資料に番地が無く、市区町村レベルの推定です。'
+          + 'この地点では現在地アラートを鳴らしません。</p>' : ''}
         <div><span class="pill" style="background:${lv.color}">レベル${p.level} ${lv.name}</span>
              <span class="kv" style="margin-left:6px">スコア ${p.score}</span></div>
         <p style="margin:8px 0 6px">${lv.text}</p>
@@ -562,6 +578,11 @@
   function checkProximity(){
     const radius = +document.getElementById('radius').value;
     const near = evaluate()
+      // 位置が市区町村レベルの推定でしかない地点は、地点として鳴らさない。
+      // 資料に番地が無い県（東京都など）では座標が区の中心付近になり、
+      // 実際の構造物と数km離れることがある。そこで鳴らすと、本当に危ない場所で
+      // 鳴らず無関係な場所で鳴るので、地点を持たないより悪くなる。
+      .filter(s => s.precision !== 'area')
       .filter(s => s.level >= Math.max(minLv, 2))          // レベル1は通知しない（docs/04-6）
       .map(s => Object.assign({}, s, { dist: M.distanceM(here[0], here[1], s.lon, s.lat) }))
       .filter(s => s.dist <= radius)

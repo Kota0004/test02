@@ -41,3 +41,4 @@ jobs:
           sleep 2
           node ../tools/verify_prototype.js
           node ../tools/verify_ipad.js
+          node ../tools/verify_precision.js

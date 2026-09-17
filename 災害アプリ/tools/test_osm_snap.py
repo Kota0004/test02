@@ -411,6 +411,25 @@ def test_coarse_start():
           osm.snap_one(precise, [near_other], max_move=300, max_move_unnamed=150,
                        coarse_max_move=3000) is not None)
 
+    # 通称名は部分一致しやすい。候補が複数あるのに1つを選ぶ根拠は無いので、
+    # 絞り切れないときは寄せない。
+    # 東京都の「本町アンダー」は区の中心から2879m先へ寄っていた。
+    cand_a = line(139.7300, 35.6800, 139.7320, 35.6800,
+                  highway="residential", tunnel="yes", name="本町アンダーパス")
+    cand_b = line(139.7200, 35.6900, 139.7220, 35.6900,
+                  highway="residential", tunnel="yes", name="東本町アンダーパス")
+    cand_b["id"] = 2
+    check("粗い出発点で名前の候補が複数なら寄せない",
+          osm.snap_one(coarse, [cand_a, cand_b], max_move=300, max_move_unnamed=150,
+                       coarse_max_move=3000) is None)
+    check("候補が1つに絞れれば寄せる",
+          osm.snap_one(coarse, [cand_a], max_move=300, max_move_unnamed=150,
+                       coarse_max_move=3000) is not None)
+    # 出発点が細かければ、候補が複数でも近い方を選んでよい
+    check("出発点が細かければ候補が複数でも寄せる",
+          osm.snap_one(precise, [cand_a, cand_b], max_move=3000,
+                       max_move_unnamed=3000) is not None)
+
     # 同じ出発点の複数地点が1点に潰れないこと（上の事故そのもの）
     trio = [dict(coarse, name=n) for n in ("北町アンダー", "赤塚アンダー", "徳丸アンダー")]
     snapped = [osm.snap_one(t, [near_other], max_move=300, max_move_unnamed=150,
