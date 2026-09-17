@@ -348,6 +348,80 @@ def test_cli_end_to_end():
               (tmp / "spots.json.pre-snap.bak").exists())
 
 
+def test_coarse_start():
+    """出発点が市区町村の中心しかない地点は、名称が一致すれば遠くまで寄せる。
+
+    東京都のPDFは「地先名又は通称名」が住所ではなく構造物名（「本町アンダー」など）で、
+    ジオコーディングが区の中心に落ちる。区の中心は位置として意味を持たないので、
+    通常の300m上限では本来の位置に届かない。ただし同名の別構造物を掴む危険は残るため、
+    確からしさは「高」にせず目視に回す。
+    """
+    # 約1.8km離れた、名前の一致する地下道
+    far = line(139.7300, 35.6800, 139.7320, 35.6800,
+               highway="residential", tunnel="yes", name="本町アンダーパス")
+
+    coarse = {"lon": 139.7100, "lat": 35.6800, "road": "4号", "road_type": "国道",
+              "name": "本町アンダー",
+              "evidence": {"confidence": 0.3, "note": "市区町村レベルまでしか特定できていない"}}
+    precise = dict(coarse, evidence={"confidence": 0.9, "note": ""})
+
+    check("出発点が粗いと判定される", osm.is_coarse(coarse))
+    check("出発点が細かければ粗いとは判定しない", not osm.is_coarse(precise))
+    check("note だけでも粗いと判定する",
+          osm.is_coarse({"evidence": {"confidence": None,
+                                      "note": "市区町村レベルまでしか特定できていない"}}))
+    check("evidence が無ければ粗いとは判定しない", not osm.is_coarse({"name": "x"}))
+
+    r = osm.snap_one(coarse, [far], max_move=300, max_move_unnamed=150,
+                     coarse_max_move=3000)
+    check("粗い出発点なら名称一致で1.8kmでも寄せる",
+          r is not None and r["distance_m"] > 1000,
+          str(r and (r["distance_m"], r["snap_confidence"])))
+    check("粗い出発点からの長距離移動は「高」にしない",
+          r is not None and r["snap_confidence"] == "中",
+          str(r and r["snap_confidence"]))
+    check("なぜ目視が要るかを書く",
+          r is not None and "同名の別の構造物" in r["why"], str(r and r["why"]))
+
+    # 出発点が細かいなら、遠くへは寄せない（従来どおり）
+    check("出発点が細かければ遠くへは寄せない",
+          osm.snap_one(precise, [far], max_move=300, max_move_unnamed=150,
+                       coarse_max_move=3000) is None)
+
+    # 粗くても、名前が一致しない線には寄せない。
+    # ここが緩むと、区の中心の近くにある無関係な構造物を掴んでしまう。
+    far_other = line(139.7300, 35.6800, 139.7320, 35.6800,
+                     highway="residential", tunnel="yes", name="無関係なアンダーパス")
+    check("粗くても名前が一致しなければ寄せない",
+          osm.snap_one(coarse, [far_other], max_move=300, max_move_unnamed=150,
+                       coarse_max_move=3000) is None)
+
+    # 0 を渡せば従来の挙動に戻せる
+    check("coarse_max_move=0 なら従来どおり",
+          osm.snap_one(coarse, [far], max_move=300, max_move_unnamed=150,
+                       coarse_max_move=0) is None)
+
+    # 取得範囲も広げないと、寄せ先がそもそも取れず
+    # 黙って「寄せられなかった」になる
+    fine_spots = [{"lon": 139.70, "lat": 35.68, "evidence": {"confidence": 0.9}},
+                  {"lon": 139.72, "lat": 35.69, "evidence": {"confidence": 0.9}}]
+    coarse_spots = [dict(fine_spots[0], evidence={"confidence": 0.3}), fine_spots[1]]
+    bb_fine = osm.spots_bbox(fine_spots, coarse_max_move=3000)
+    bb_coarse = osm.spots_bbox(coarse_spots, coarse_max_move=3000)
+    check("粗い地点があれば取得範囲を広げる", bb_coarse[0] < bb_fine[0] and bb_coarse[1] < bb_fine[1],
+          f"{[round(v, 3) for v in bb_coarse]}")
+    # 余白は「細かい場合との差」ではなく、いちばん外側の地点からの絶対値で見る。
+    # ここを取り違えると、足りているのに足りないと判断してしまう。
+    south = min(x["lat"] for x in coarse_spots)
+    check("いちばん外側の地点から寄せる上限ぶん確保する",
+          (south - bb_coarse[0]) * 111_000 >= 3000 * 0.99,
+          f"{(south - bb_coarse[0]) * 111:.2f} km")
+    check("細かい地点だけなら広げない",
+          osm.spots_bbox(fine_spots, coarse_max_move=3000) == bb_fine)
+    check("coarse_max_move=0 なら取得範囲も広げない",
+          osm.spots_bbox(coarse_spots, coarse_max_move=0) == bb_fine)
+
+
 def main():
     test_categorize()
     test_snap_nearest()
@@ -360,6 +434,7 @@ def main():
     test_snap_confidence()
     test_max_move()
     test_two_tier_limit()
+    test_coarse_start()
     test_bbox()
     test_http_headers_ascii()
     test_cli_end_to_end()
