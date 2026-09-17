@@ -1,26 +1,27 @@
-# 試作アプリを GitHub Pages に公開する。
+# 雨量を取り込んでアプリを公開する。
 #
 #   https://kota0004.github.io/test02/
 #
 # 公開するのは 災害アプリ/prototype/ の中身だけで、授業課題のファイルは載らない。
+#
+# 危険度（risk_latest.json）は毎回ここで作り、リポジトリにはコミットしない。
+# 全国に広げると1回あたり約1MBになり、毎時コミットすると年間GB単位で
+# 履歴が膨らんで無料の範囲を超えるため（docs/09 参照）。
 name: アプリを公開
 
 on:
-  # 通常のコミット（人が push したとき）
+  # 毎時0分。雨量を取り直して公開しなおす。
+  schedule:
+    - cron: "0 * * * *"
+
+  # アプリ本体・データ・ツールを変えたとき
   push:
     branches: [claude/github-file-org-report-docp9t]
     paths:
       - "災害アプリ/prototype/**"
+      - "災害アプリ/data/**"
+      - "災害アプリ/tools/**"
       - ".github/workflows/pages.yml"
-
-  # 毎時の危険度更新のあと。
-  #
-  # ⚠️ GITHUB_TOKEN による push は次のワークフローを起動しない仕様なので、
-  #    「雨量と危険度を更新」のコミットでは上の push が発火しない。
-  #    ワークフローの完了を合図にするこちらで拾う。
-  workflow_run:
-    workflows: ["雨量と危険度を更新"]
-    types: [completed]
 
   workflow_dispatch:
 
@@ -37,24 +38,51 @@ concurrency:
 
 jobs:
   deploy:
-    # 更新が失敗した回はそのままなので公開しない
-    if: >-
-      github.event_name != 'workflow_run' ||
-      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
         with:
-          # workflow_run では既定で「起動元のワークフローが動いた時点」の
-          # コミットになる。最新の危険度を載せたいので既定ブランチの先端を取る。
-          ref: claude/github-file-org-report-docp9t
+          python-version: "3.11"
+
+      - name: 依存を入れる
+        run: pip install -r 災害アプリ/tools/requirements.txt
+
+      # 観測点表（約1MB）は毎回取りに行かない。気象庁への無駄な負荷を避ける。
+      - name: 観測点表のキャッシュ
+        uses: actions/cache@v4
+        with:
+          path: 災害アプリ/data/amedastable_cache.json
+          key: amedastable-${{ github.run_id }}
+          restore-keys: amedastable-
+
+      # 雨量が取れなくても公開は続ける。地点と閾値だけでも使えるため。
+      - name: 雨量を取り込み危険度を計算する
+        working-directory: 災害アプリ
+        run: |
+          set -o pipefail
+          if python3 tools/fetch_amedas.py \
+               --spots data/spots_chiba.json \
+               --out prototype/data/risk_latest.json 2>&1 | tee /tmp/out.txt; then
+            status="取り込み成功"
+          else
+            status="⚠️ 取り込み失敗（雨量なしで公開します）"
+            rm -f prototype/data/risk_latest.json
+          fi
+          {
+            echo "### $status"
+            echo '```'
+            cat /tmp/out.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: 公開するファイルを確かめる
+        working-directory: 災害アプリ/prototype
         run: |
-          cd 災害アプリ/prototype
           test -f index.html   || { echo "index.html がない"; exit 1; }
           test -f risk.js      || { echo "risk.js がない"; exit 1; }
           test -f data/spots_chiba.json || { echo "危険箇所データがない"; exit 1; }
@@ -66,7 +94,6 @@ jobs:
       # ワークフローの GITHUB_TOKEN では Pages サイトを「新規作成」できない
       # （Resource not accessible by integration）。有効化だけは人が一度だけ
       # 押す必要があるので、それまではここで理由を言って正常終了する。
-      # 待っている間ずっと赤いより、何をすればいいかが分かる方がよい。
       - id: check
         env:
           GH_TOKEN: ${{ github.token }}
@@ -83,8 +110,6 @@ jobs:
               echo "1. https://github.com/${{ github.repository }}/settings/pages を開く"
               echo "2. **Build and deployment** の **Source** を **GitHub Actions** にする"
               echo "3. このワークフローを Re-run する（以後は自動）"
-              echo
-              echo "ワークフローの権限では Pages を新規作成できないため、ここだけ手作業が要ります。"
             } >> "$GITHUB_STEP_SUMMARY"
             echo "Pages が未設定です。上の手順のあと再実行してください。"
             exit 0
