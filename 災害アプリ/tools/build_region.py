@@ -134,6 +134,8 @@ def main() -> int:
     ap.add_argument("--list", action="store_true", help="見つかったPDFを一覧して終了")
     ap.add_argument("--only", default="", help="特定の都道府県だけ処理（例: 東京都）")
     ap.add_argument("--skip", default="", help="除外する都道府県をカンマ区切りで")
+    ap.add_argument("--include-no-table", action="store_true",
+                    help="一覧表が無いと記録済みの県も試す（資料の改訂を確かめるとき）")
     ap.add_argument("--sleep", type=float, default=1.0, help="ジオコーディングの間隔[秒]")
     ap.add_argument("--limit", type=int, default=0, help="各県の先頭N件だけ（動作確認用）")
     ap.add_argument("--no-geocode", action="store_true")
@@ -156,6 +158,21 @@ def main() -> int:
     skip = {s.strip() for s in args.skip.split(",") if s.strip()}
     if args.only:
         entries = [e for e in entries if e["pref"] == args.only]
+
+    # PDFが地図画像だけで一覧表が入っていない県は、毎回取りに行っても
+    # 必ず0件になる。確認済みのものは regions.json に記録してあるので飛ばす。
+    # 資料が改訂されて表が入るかもしれないので、--include-no-table で試せる。
+    no_table = {k: v for k, v in (region.get("no_table") or {}).items()
+                if not k.startswith("_")}
+    if no_table and not args.include_no_table:
+        hit = [e["pref"] for e in entries if e["pref"] in no_table]
+        if hit:
+            print(f"\n一覧表が無いため飛ばす県: {', '.join(hit)}")
+            for pref in hit:
+                print(f"  {pref}: {no_table[pref]}")
+            print("  （--include-no-table で試せます。資料が改訂されていれば取り込めます）")
+        entries = [e for e in entries if e["pref"] not in no_table]
+
     entries = [e for e in entries if e["pref"] not in skip]
 
     print(f"{region['name']}: PDF {len(entries)} 件")

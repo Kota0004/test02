@@ -124,3 +124,22 @@ jobs:
           echo
           echo "########## 表の構造を見る ##########"
           python3 tools/build_spots.py --pdf /tmp/tokyo.pdf --dump-table --page 2 2>&1 | head -40 || true
+
+      # ⑥ 山梨県・長野県は抽出0件だった。表の作りを見て原因を特定する。
+      - name: 山梨・長野のPDFの中身を見る
+        working-directory: 災害アプリ
+        run: |
+          set -o pipefail
+          python3 tools/build_region.py --region kanto --list > /tmp/list.txt
+          for pref in 山梨県 長野県; do
+            url=$(grep -A1 "^  ${pref}" /tmp/list.txt | tail -1 | tr -d ' ')
+            echo "=============================================="
+            echo "  $pref  $url"
+            echo "=============================================="
+            curl -sS -A "mizumichi-research/0.1" -o /tmp/p.pdf "$url"
+            echo "サイズ: $(wc -c < /tmp/p.pdf) bytes"
+            python3 tools/build_spots.py --pdf /tmp/p.pdf --inspect || echo "(inspect 失敗)"
+            echo "--- 1ページ目のテキスト（先頭） ---"
+            python3 tools/build_spots.py --pdf /tmp/p.pdf --dump-text --page 1 2>&1 | head -25 || true
+            echo
+          done

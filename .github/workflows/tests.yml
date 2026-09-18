@@ -42,3 +42,4 @@ jobs:
           node ../tools/verify_prototype.js
           node ../tools/verify_ipad.js
           node ../tools/verify_precision.js
+          node ../tools/verify_unknown_rain.js
