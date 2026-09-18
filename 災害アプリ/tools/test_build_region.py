@@ -75,6 +75,21 @@ check("同じPDFは1件にまとめる", len(dup) == 9, f"{len(dup)} 件")
 # ここで例外を投げると原因が分かりにくくなる。
 check("PDFが無ければ空で返す", B.find_pdfs("<html><body>準備中</body></html>", BASE) == [])
 
+# 一覧表が無い県は既定で飛ばす。
+# 山梨・長野のPDFは地図画像だけで表が入っておらず、毎回取りに行っても必ず0件になる。
+# パーサの問題ではないので、記録して飛ばす。
+regions_all = B.load_regions()
+no_table = {k: v for k, v in (regions_all["kanto"].get("no_table") or {}).items()
+            if not k.startswith("_")}
+check("一覧表が無い県が記録されている", set(no_table) == {"山梨県", "長野県"},
+      str(sorted(no_table)))
+check("なぜ取り込めないかを書いてある",
+      all(len(v) > 10 for v in no_table.values()),
+      str(list(no_table.values())[:1]))
+check("記録した県は prefs に入れない",
+      not (set(no_table) & set(regions_all["kanto"]["prefs"])),
+      str(regions_all["kanto"]["prefs"]))
+
 # regions.json が読めて、kanto が ready になっているか
 regions = B.load_regions()
 check("regions.json を読める", "kanto" in regions, f"{list(regions)}")
